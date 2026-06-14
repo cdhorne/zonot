@@ -8,7 +8,7 @@ lockdown or encryption.
 
 ## Source of truth
 
-The full decision record is **[`croft-seed.md`](croft-seed.md)** — 24 ADRs. This file carries only
+The full decision record is **[`croft-seed.md`](croft-seed.md)** — 32 ADRs. This file carries only
 what must be held in working memory every session. **When this file and an ADR disagree, the ADR
 wins** (and fix this file). The `docs/adr/` tree, `docs/philosophy.md`, and `docs/architecture.md`
 are **generated from the seed doc** at `croft init` — don’t hand-edit generated files; change the
@@ -16,13 +16,18 @@ seed doc and regenerate.
 
 ## Current state
 
-**Seed stage — nothing is built yet.** Build order (ADR-0024): **core → Worker → CLI → app.**
+**Seed stage — nothing is built yet.** **Wedge (ADR-0025):** the connected **mobile read/write
+bridge** between on-the-go capture/reading and a desktop-centric, git-native, agent-enriched workflow
+(files are the truth). Build order (ADR-0024): **core → Worker → (CLI + app, interleaved).**
 
 1. **core** — convention/normalization, frontmatter, slug/id, tag normalization, the write-client
    interface, the schema, the SQLite FTS engine.
-1. **Worker** — the MCP tool surface + HTTP endpoints; this is the live-dogfood harness (ADR-0013),
-   so it comes before CLI/app.
-1. **CLI**, then **app**.
+1. **Worker** — the MCP tool surface + HTTP endpoints; the live-dogfood harness (ADR-0013) and the
+   path v1 mobile writes ride, so it comes before the clients.
+1. **CLI + app, interleaved** — the app is the wedge, so it is no longer last; both ride the edge.
+
+**v1 is sequenced (ADR-0020):** v1.0 dogfood loop (free/self-host) → v1.1 managed C1 (first paid tier,
+~$2–5 CAD; OAuth + GitHub App + billing) → v1.2 guardrailed hosted inference (opt-in Tier-2).
 
 ## Non-negotiables
 
@@ -33,8 +38,10 @@ Violating any of these breaks Croft’s identity. Check against this list before
   **processor, not a store**. No encryption-as-trust, no lock-in. (ADR-0001)
 - **Plain files, user’s repo.** Markdown, one repo per workspace, `notes/YYYY/MM/` +
   `sources/YYYY/MM/`. (ADR-0003)
-- **Captures are creates.** New file per note → conflict-free. **v1 exposes creates only**; the
-  write client is version-aware from day one, but edits stay internal until later. (ADR-0004/0015)
+- **Captures are creates; v1 adds a bounded mutation surface.** New file per note → conflict-free.
+  v1 exposes **capture + append + correction (edit-recent / undo / delete)** (ADR-0026); arbitrary/
+  historical editing stays gated. Undo/delete are new commits (tidy `HEAD`, never rewrite history).
+  (ADR-0004/0015/0026)
 - **Git history is the immutability record.** Files are mutable; the audit trail is git. Provenance
   rides in commit trailers, not an in-file array. (ADR-0007)
 - **One core enforces the convention.** The conformance test guards exactly one thing: a
@@ -47,6 +54,22 @@ Violating any of these breaks Croft’s identity. Check against this list before
   Phase 2). (ADR-0022)
 - **Git is the device sync protocol** (isomorphic-git) — there is no hand-rolled changes-feed.
   (ADR-0010/0022)
+- **Files are the truth; every index/DB is derivable and disposable.** The deliberate inverse of
+  DB-as-truth (GBrain) and vendor memory. (ADR-0025)
+- **Graceful obsolescence.** The operator's *and the maker's* disappearance must be a non-event for
+  the user's data; **source-available, self-host-permitted open-core + C0 self-host** is the mechanism
+  (non-compete license, converts to open over time; ADR-0032). Sell convenience, never access to your
+  own data. (ADR-0027/0032)
+- **Core stays web-standard; vendor/runtime specifics live in adapters** (use `createMcpHandler` for
+  the MCP transport, not `McpAgent`/DOs; the v1.2 edge-search DO is a separate, deliberate adapter —
+  ADR-0009). The isomorphic-git mobile benchmark is a gating spike before any device-git-sync work.
+  (ADR-0028)
+- **Closed kernel, open edges.** The kernel is small and conformance-guarded; everything that varies
+  (backends, drivers, transports, triggers, importers, connectors, model providers) is a typed
+  extension point with a uniform contract (provenance, no-envelope-mutation, optional, web-standard).
+  (ADR-0031)
+- **Hosted inference is opt-in, no-retention, no-train, output-observable;** C0/BYO-model is the
+  zero-operator-read floor. (ADR-0027/0001)
 
 ## Architecture in one breath
 
@@ -74,16 +97,18 @@ vocab (KV on the edge, synced copy on device). (ADR-0022)
 
 ## Canonical vocabulary
 
-`capture · source · note · thread · tier · register · reader · agent · workspace`. One canonical
+`capture · source · note · thread · tier · reader · agent · workspace`. One canonical
 name per concept. **No theming** (no nautical/archive metaphors in code or docs).
 
 ## Out of scope for v1 — do not build
 
 If a task drifts into these, **stop and flag** rather than gold-plating. (ADR-0020)
 
-- On-device enrichment/embedding models · exposed edit operations · edge search index /
-  per-tenant Durable Object / semantic search · Tier-2 auto-classify · C0 direct git sync from the
-  app · all of Phase 2 (managed custody, GitHub App, OAuth/CIMD).
+- On-*device* enrichment/embedding models · **arbitrary/historical edit** (the *bounded* correction
+  surface — append / edit-recent / undo / delete — **is** in v1, ADR-0026) · **semantic / vector
+  search** · C0 direct git sync from the app · rich/custom aggregations. **(Now IN v1, sequenced:
+  managed C1 custody + billing at v1.1; guardrailed Tier-2 hosted inference + lexical edge search at
+  v1.2 — ADR-0017/0027/0009.)**
 
 ## Conventions (grows here)
 
@@ -98,7 +123,7 @@ ADRs. Known up front:
 - **React Native is not browser-CORS-bound** — the app talks to GitHub’s git HTTP directly (use the
   `http/web` client); the Worker is only a fallback proxy. (ADR-0010)
 - **Provenance lives in commit trailers**, not note frontmatter (`Source`, `Capture-Id`/`Edit-Of`,
-  `Model`). (ADR-0007)
+  `Model`, plus `Undo-Of`/`Delete-Of` for the correction surface). (ADR-0007/0026)
 
 ## Running things
 
