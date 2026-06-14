@@ -1,7 +1,7 @@
 # Croft — v1 Delivery Roadmap
 
 > Hand-authored planning artifact (like `CLAUDE.md`); **not** generated from the seed. Derived from
-> [`croft-seed.md`](croft-seed.md) **rev 14**. When an ADR changes, update this file. This is the
+> [`croft-seed.md`](croft-seed.md) **rev 20**. When an ADR changes, update this file. This is the
 > input to the agent-sized task breakdown — each phase below is scoped to be handed to agents.
 
 ## What "v1 done" means
@@ -18,8 +18,10 @@ daily across all three runtimes, with a real imported corpus to make search/aggr
 **v1 is sequenced (rev 17): v1.0 → v1.1 → v1.2.** The dogfood loop above is **v1.0** (the foundation,
 free/self-host — Phases 0–3 below). **v1.1** adds **managed C1** (multi-tenant custody + billing;
 first paid tier, BYO-model, ~$2–5 CAD). **v1.2** adds **guardrailed hosted inference** (opt-in
-Tier-2). Each ships and validates before the next; the larger MVP is consciously accepted to have a
-paid product that covers costs (ADR-0017/0020/0027).
+Tier-2) — the **completeness lever** that makes the app payable standalone for the **naive, no-agent
+user** (the second of Croft's two audiences, ADR-0025/0027 rev 20; for that user it is the *only*
+enrichment path, not a mere convenience). Each ships and validates before the next; the larger MVP is
+consciously accepted to have a paid product that covers costs (ADR-0017/0020/0027).
 
 ## Build principles (hold across all phases)
 
@@ -76,7 +78,7 @@ paid product that covers costs (ADR-0017/0020/0027).
 - **Port:** `@modelcontextprotocol/sdk` + Cloudflare **`createMcpHandler`** (stateless, **no DO**);
   wrangler deploy.
 - **Auth (Phase 1):** path-secret URL + one fine-grained PAT in a Worker secret; static workspace map
-  (ADR-0013). *(OAuth/CIMD/GitHub-App is Phase 2 — out of v1.)*
+  (ADR-0013). *(OAuth/CIMD/GitHub-App is **v1.1**, not v1.0 — ADR-0017/0020.)*
 - **Realizes:** ADR-0007/0013/0015/0021/0022/0026.
 - **Agent tasks:** (a) Worker scaffold + `createMcpHandler` wiring; (b) GitHub REST write backend +
   trailers + atomic commit; (c) write handlers (capture/append/correct/undo/delete) over the core;
@@ -128,10 +130,23 @@ Built on the same core + edge; architected for from day one (multi-tenant + the 
 - **Build:** multi-tenant managed custody — OAuth 2.1 + CIMD, the GitHub App (Contents:rw +
   Metadata:r, one repo), per-request short-lived token minting, onboarding (OAuth + one-click install
   on an auto-created repo), billing (ADR-0017). BYO-model (Tier 1) — no operator inference yet.
+- **Payment rail (ADR-0018 #11, pending scoping).** Two rails by signup origin, but **sequence
+  app-first:** the app's in-app subscription **must** use **app-store IAP** (digital goods; reuse
+  Fathom's RevenueCat-replacement backend for receipt validation + entitlement). The **web/CLI rail is
+  deferred** until web paid-demand appears — then plug **one** PSP webhook into the *same* entitlement
+  store. PSP choice hinges on tax appetite + geography, not processing fee: **Helcim** (Calgary,
+  interchange-plus, CAD-native, cheap) if web buyers are mostly Canadian and you own GST/HST; a
+  **Merchant-of-Record** (Paddle / Lemon Squeezy) if international web sales matter and you want to
+  offload global VAT. *(Verify current terms — processor pricing / MoR rules shift.)*
 - **Realizes:** ADR-0017 / 0027. **Exit:** a stranger can sign up, connect their repo, and capture
   via their own Claude — paying ~$2–5 CAD. First external validation + revenue.
 
 ### v1.2 — Rich managed tier: hosted inference + edge search (C1)
+- **Why it matters (rev 20):** hosted inference is the **completeness lever** for the **no-agent
+  user** — the *only* enrichment path when no agent is in the loop (ADR-0002/0025/0027), so it is
+  load-bearing for that audience, not optional. The **two halves of v1.2 are separable**: the edge
+  search index is model-free / reach-justified; the Workers-AI inference adapter sits behind the clean
+  Tier-2 seam (ADR-0031 #7), so C0/self-host keeps the raw + BYO path.
 - **Build (hosted inference):** Tier-2 edge enrichment — Workers AI or a no-retention API; **light
   enrichment only** (tag/title/classify); opt-in; **no-retention, no-train**; output = plain MD + a
   `Model` trailer (observable); per-user caps (ADR-0002 / 0019 / 0027).

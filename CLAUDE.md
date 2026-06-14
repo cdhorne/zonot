@@ -18,7 +18,11 @@ seed doc and regenerate.
 
 **Seed stage — nothing is built yet.** **Wedge (ADR-0025):** the connected **mobile read/write
 bridge** between on-the-go capture/reading and a desktop-centric, git-native, agent-enriched workflow
-(files are the truth). Build order (ADR-0024): **core → Worker → (CLI + app, interleaved).**
+(files are the truth). **Two audiences keep each other honest (ADR-0025, rev 20):** the **git-native
+developer** who brings their own agent (Tier-1 BYO) — observable/ownable is the pitch — **and** a
+**naive, no-agent user** who pays the flat C1 fee and wants the app to enrich itself via **Tier-2
+hosted inference** — complete/frictionless is the pitch; agent-free onboarding is a first-class design
+surface. Build order (ADR-0024): **core → Worker → (CLI + app, interleaved).**
 
 1. **core** — convention/normalization, frontmatter, slug/id, tag normalization, the write-client
    interface, the schema, the SQLite FTS engine.
@@ -27,7 +31,8 @@ bridge** between on-the-go capture/reading and a desktop-centric, git-native, ag
 1. **CLI + app, interleaved** — the app is the wedge, so it is no longer last; both ride the edge.
 
 **v1 is sequenced (ADR-0020):** v1.0 dogfood loop (free/self-host) → v1.1 managed C1 (first paid tier,
-~$2–5 CAD; OAuth + GitHub App + billing) → v1.2 guardrailed hosted inference (opt-in Tier-2).
+~$2–5 CAD; OAuth + GitHub App + billing) → v1.2 guardrailed hosted inference (opt-in Tier-2; the
+**completeness lever** for the no-agent tier).
 
 ## Non-negotiables
 
@@ -51,7 +56,7 @@ Violating any of these breaks Croft’s identity. Check against this list before
   migration in the core. (ADR-0012)
 - **Idiomatic protocols at every boundary; no bespoke ones.** MCP (agent), HTTP + RFC 9457 +
   Idempotency-Key + cursor (app/integrators), git (storage + device sync), OAuth 2.1 / CIMD (auth,
-  Phase 2). (ADR-0022)
+  v1.1). (ADR-0022)
 - **Git is the device sync protocol** (isomorphic-git) — there is no hand-rolled changes-feed.
   (ADR-0010/0022)
 - **Files are the truth; every index/DB is derivable and disposable.** The deliberate inverse of
@@ -69,7 +74,10 @@ Violating any of these breaks Croft’s identity. Check against this list before
   extension point with a uniform contract (provenance, no-envelope-mutation, optional, web-standard).
   (ADR-0031)
 - **Hosted inference is opt-in, no-retention, no-train, output-observable;** C0/BYO-model is the
-  zero-operator-read floor. (ADR-0027/0001)
+  zero-operator-read floor. For the **naive no-agent user it is the *only* enrichment path** (MCP
+  relocates but doesn't remove the model question — ADR-0002) — the **completeness lever** that makes
+  the app payable standalone, so it is load-bearing for that tier, not just convenience, while staying
+  behind the clean Tier-2 seam for C0/self-host. (ADR-0027/0002/0001)
 
 ## Architecture in one breath
 
