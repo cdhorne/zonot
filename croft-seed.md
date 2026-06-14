@@ -18,7 +18,8 @@ creates **+ append + a bounded correction surface** (edit-recent / undo / delete
 longevity & revenue), 0028 (dependency & risk register). **Resolved** ADR-0018 #8 (edge-first sync)
 and #10 (edge SHA-conditional edit policy); **settled** the ADR-0005 field set (minimal-core /
 open-extension) and adopted the compiled-truth + append-only-timeline body shape; **folded** concrete
-port choices into ADR-0022; **added** a Glossary. Three frontmatter tensions are resolved with
+port choices into ADR-0022; **added** a Glossary; **dropped** the undefined `register` from the
+canonical set. Three frontmatter tensions are resolved with
 leanings and flagged for review (ADR-0005 Open).
 
 > **Revision 12 (2026-06-14).** Prior-art / standards review pass (no strategy change). Corrected
@@ -56,7 +57,7 @@ static file tree that drifts. Concretely:
 - **Draft `docs/philosophy.md` and `docs/architecture.md`** from this doc for human review.
 1. **Honor statuses:** Accepted -> locked; Proposed -> resolve before first implementation; Open
    -> tracked in 0018; Withdrawn -> placeholder.
-1. **One canonical name per concept:** `capture - source - note - thread - tier - register - reader - agent - workspace` (see **Glossary**). No theming.
+1. **One canonical name per concept:** `capture - source - note - thread - tier - reader - agent - workspace` (see **Glossary**). No theming.
 
 Rationale: the mechanical and derivable artifacts (ADR tree, index, orientation prose) are exactly
 what Claude Code does reliably from a clear spec, and generating them in-repo keeps them downstream
@@ -74,10 +75,6 @@ One canonical name per concept (ADR-0014); no theming. Definitions are derived f
 - **note** – the system-of-record record in `notes/`; body may be model-phrased (ADR-0005).
 - **thread** – the one authored lineage edge grouping related captures/notes; a PROV Activity (ADR-0006).
 - **tier** – the capture tier (0 CLI-direct · 1 client-enriched · 2 edge-auto-classify) = the privacy/trust gradient (ADR-0002).
-- **register** – **UNDEFINED in the source material – flag for the maker.** Two plausible readings:
-  (a) the append-only dated *evidence log* below the compiled-truth line in a note (a "register" of
-  events, ADR-0005/0026); (b) the *voice/register* an enriched body is rendered in. Confirm a
-  definition or drop it from the canonical set.
 - **reader** – a read surface over the corpus: the mobile app, Obsidian, GitHub web, grep, the CLI (ADR-0010).
 - **agent** – the AI (e.g. Claude) that enriches captures over the MCP tool surface (ADR-0002/0021).
 - **workspace** – one notes repo = one workspace; one repo per workspace (ADR-0003).

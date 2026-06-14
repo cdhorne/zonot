@@ -86,9 +86,8 @@ vocab (KV on the edge, synced copy on device). (ADR-0022)
 
 ## Canonical vocabulary
 
-`capture · source · note · thread · tier · register · reader · agent · workspace`. One canonical
-name per concept. **No theming** (no nautical/archive metaphors in code or docs). **`register` is
-undefined in the source — flagged for the maker** (see the Glossary in the seed doc).
+`capture · source · note · thread · tier · reader · agent · workspace`. One canonical
+name per concept. **No theming** (no nautical/archive metaphors in code or docs).
 
 ## Out of scope for v1 — do not build
 
