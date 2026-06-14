@@ -8,6 +8,22 @@
 > local-first mobile app (in the MVP), Obsidian, GitHub web, grep, the CLI. Ethos: **power,
 > convenience, trust** – trust via observability and ownership.
 
+> **Revision 20 (2026-06-14).** **Dual-audience model made explicit; hosted inference reframed from
+*convenience* to *completeness lever*.** Croft deliberately serves **two audiences that keep each
+other honest:** the **git-native developer** who brings their own agent (Tier-1 BYO over MCP — the
+ADR-0025 wedge) and a **naive, no-agent user** who pays the flat C1 fee and wants the app to enrich
+itself (the maker's less-technical peers are the test cohort). For the no-agent user, **Tier-2 hosted
+inference (v1.2) is the *only* path to enrichment** — BYO-agent, app-as-MCP-host-with-BYO-key, and
+deferred on-device models all require the user to *bring* a model, and on-device *embedding* is search,
+not enrichment — so it is **load-bearing, not optional** for that tier, while staying behind the clean
+Tier-2 extension seam (ADR-0031 #7) for C0/self-host. Amends **ADR-0002** (enrichment locus: where the
+model lives; MCP relocates, doesn't remove, the model question), **ADR-0025** (two audiences; a
+deliberate, modest consumer-ward repositioning), **ADR-0027** (hosted inference = completeness lever
+for the no-agent tier; the highest-margin user). Clarified **ADR-0010** (the on-device *deferral* is
+narrow — only the models; on-device FTS/facets/mirror are in v1). Added **ADR-0018 #11** (payment rail:
+app-store IAP for app signups + a self-hosted subscription backend for web/CLI/C0; billing scoping
+pending).
+
 > **Revision 19 (2026-06-14).** **Edge search moved into v1 at v1.2** (with hosted inference) — the
 managed **rich tier** (ADR-0020): the per-tenant materialized **lexical** FTS + aggregation index
 (ADR-0009) gives the agent/edge rich whole-corpus search; semantic/vectors stay deferred. v1.0/1.1
@@ -153,12 +169,21 @@ One canonical name per concept (ADR-0014); no theming. Definitions are derived f
 
 ### ADR-0002. Three-tier capture; push every interaction to the lowest tier
 
-**Status:** Accepted (rev 3) - **Slug:** `three-tier-capture` - **Tags:** architecture, custody
+**Status:** Accepted (rev 20) - **Slug:** `three-tier-capture` - **Tags:** architecture, custody
 
 - **Decision.** **Tier 0** – CLI -> GitHub directly. **Tier 1** – enriched API: client (Claude)
   enriched; edge validates + commits. **Tier 2** – auto-classify: edge runs a model. **In v1 (C1,
   at v1.2) as guardrailed hosted inference** – opt-in, no-retention, output-observable, small-model +
   capped (ADR-0027); ADR-0018 #5 picks the model.
+- **Where the model lives (rev 20).** Enrichment always needs a model *somewhere*; the tier is just
+  *where it lives*. **Tier 1** = the model the user already brought (their agent over MCP) — free to
+  the operator, but only when capture originates **inside** an agent. **Tier 2** = the operator's
+  model — the **only** enrichment path for an **agent-less** capture (raw app quick-capture,
+  deterministic API, email-in). **MCP relocates this question, it does not remove it:** an app that
+  "pushes to MCP" still needs a model behind it — either the user's BYO key (still requires a model
+  sub) or the operator's (which *is* Tier 2). So for a **no-agent user, hosted inference is
+  load-bearing**, not a convenience (ADR-0025/0027). On-device models would add a third locus but are
+  deferred (ADR-0010); on-device *embedding* is search, not enrichment (ADR-0008/0009).
 - **Consequences.** The ladder is the privacy gradient / trust budget: in-transit operator reads
   only at Tier 2 (ADR-0019). The reader’s on-device LLM (post-MVP) decouples enrichment locus from
   custody locus. Reused on read (ADR-0008).
@@ -359,8 +384,13 @@ One canonical name per concept (ADR-0014); no theming. Definitions are derived f
     filenames/timestamps – are the identity/ordering key** (tolerate clock skew). Store the GitHub
     credential in the platform secure store (iOS Keychain / Android Keystore), scoped to the one
     workspace repo.
-- **Deferred to post-MVP.** On-device embedding + enrichment models (the operator-free node);
-  C0 direct git sync; (the delta/cursor protocol is moot under git – ADR-0022).
+- **Deferred to post-MVP (narrow — only the *models*).** On-device embedding + enrichment models (the
+  operator-free node); C0 direct git sync; (the delta/cursor protocol is moot under git – ADR-0022).
+  **What is *not* deferred:** on-device lexical FTS + faceted aggregation, the local mirror/clone +
+  capture queue — all model-free and **in v1** (ADR-0008). Until on-device enrichment ships, the
+  no-agent app user's enrichment comes from **Tier-2 hosted inference** (ADR-0002/0027); on-device
+  enrichment is its eventual operator-free *replacement*, but only for the app path (not the
+  deterministic-API capture path).
 - **Consequences.** A connected mobile read/write bridge without bundling models – a small but
   *complete* surface for the dogfood loop. The model-powered, operator-free, git-syncing app is the
   post-MVP differentiator (the C0 ownership upgrade).
@@ -490,6 +520,12 @@ One canonical name per concept (ADR-0014); no theming. Definitions are derived f
 1. **Edit conflict-resolution policy – resolved (rev 13):** edge-mediated **SHA-conditional**
    (412 → refetch → reapply), single-user-rare; the device-git divergence guard covers the post-MVP
    git path (ADR-0010/0026).
+1. **Payment rail (rev 20).** C1 billing splits by signup origin: **app-store IAP** owns
+   app-originated payment (tax / dunning / refunds handled), but **web / CLI / C0 signups never touch
+   an app store** and need a second rail — leaning a **self-hosted subscription backend** (repurpose
+   Fathom's, replacing a RevenueCat-style SDK) for receipt validation + entitlement, plus a
+   Stripe-style path for web/CLI. Mind the iOS anti-steering rules. Full billing scoping pending
+   (ADR-0017/0027).
 
 ### ADR-0019. Cost and trust budget
 
@@ -670,7 +706,7 @@ One canonical name per concept (ADR-0014); no theming. Definitions are derived f
 
 ### ADR-0025. Product wedge & competitive positioning
 
-**Status:** Accepted (rev 13) - **Slug:** `wedge-and-positioning` - **Tags:** positioning, north-star, scope
+**Status:** Accepted (rev 20) - **Slug:** `wedge-and-positioning` - **Tags:** positioning, north-star, scope
 
 - **Context.** The category crystallized in 2026 (Karpathy's "LLM wiki" → GBrain at ~22k stars, Basic
   Memory, nanobrain). Croft must state where it is differentiated and where it would be entering a
@@ -679,6 +715,17 @@ One canonical name per concept (ADR-0014); no theming. Definitions are derived f
   on-the-go capture/reading with a desktop-centric, git-native, agent-enriched workflow. Mobile is
   the differentiated front door; the desktop (Obsidian / Claude / CLI / grep) is the reused workshop;
   plain Markdown in the user's git repo is the wire.
+- **Two audiences (rev 20).** Croft deliberately serves **two user types that keep each other
+  honest:** (1) the **git-native developer** who brings their own agent (Tier-1 BYO over MCP) — the
+  wedge above, for whom files-as-truth / observability is the front-of-house pitch; and (2) a **naive,
+  no-agent user** who pays the flat C1 fee and wants the app to enrich itself via **Tier-2 hosted
+  inference** (ADR-0002/0027), for whom the ethos is back-of-house insurance and "it just works" is
+  the pitch. The maker is audience (1) and dogfoods daily; less-technical peers are the audience-(2)
+  test cohort. This is a **deliberate, modest consumer-ward repositioning** — accepted because the two
+  audiences cross-check scope and honesty (the developer keeps it observable/ownable; the civilian
+  keeps it complete and frictionless) and because the no-agent user is the **highest-margin** user
+  (ADR-0027). Consequence: the app's standalone, **agent-free onboarding** is a first-class design
+  surface, not an afterthought.
 - **Files are the truth (non-negotiable).** The Markdown files are the system of record; every
   index/DB is derivable and disposable (tightens ADR-0001/0009). This is the deliberate inverse of
   GBrain (Postgres = truth, Markdown = projection) and of vendor memory (opaque, in-custody). Do not
@@ -728,7 +775,7 @@ One canonical name per concept (ADR-0014); no theming. Definitions are derived f
 
 ### ADR-0027. Graceful obsolescence, longevity & revenue posture
 
-**Status:** Accepted (rev 18) - **Slug:** `longevity-and-revenue` - **Tags:** north-star, custody, distribution, cost
+**Status:** Accepted (rev 20) - **Slug:** `longevity-and-revenue` - **Tags:** north-star, custody, distribution, cost
 
 - **Context.** A tool that asks you to entrust your knowledge must answer: what happens when the
   operator — or the maker — loses interest?
@@ -750,10 +797,18 @@ One canonical name per concept (ADR-0014); no theming. Definitions are derived f
   + longevity mechanism; BYO-model, zero operator read). **C1 managed custody is the paid tier** — a
   small flat subscription for convenience (OAuth + one-click App install, hosted MCP), **~$2–5 CAD
   (even $0.99–$2)**; with **BYO-model** its COGS ≈ the Workers floor. **Hosted inference (Tier 2,
-  v1.2) is an opt-in C1 convenience** with the guardrails below, included up to a cap or as a higher
+  v1.2) is an opt-in C1 feature** with the guardrails below, included up to a cap or as a higher
   tier so its bounded COGS is covered. **Sell convenience, never access to your own data;** hosted
   inference *is* a paid convenience, but BYO-model stays free-of-inference-charge and **C0 stays
   free**. GitHub Sponsors is a legitimate fourth leg for an OSS developer tool.
+- **Hosted inference is the *completeness lever* for the no-agent tier (rev 20).** Reframed from "pure
+  convenience": for the **naive, no-agent user** (ADR-0025 audience 2) it is the **only** path to
+  enrichment — BYO-agent, app-as-MCP-host-with-BYO-key, and deferred on-device models all require the
+  user to *bring* a model (ADR-0002). So it is **load-bearing** for that tier, not optional — yet it
+  stays behind the clean Tier-2 extension seam (ADR-0031 #7) so C0/self-host keeps the raw + BYO path
+  and the operator-read floor. Economically it is the **highest-margin** user: light enrichment is
+  ≈ cents/user/month (ADR-0019) against the $2–10 fee, so few such users cover costs — the civilian
+  who pays *and* uses hosted inference out-monetizes a BYO-model developer (who pays for custody only).
 - **Hosted-inference guardrails (rev 17).** **Privacy:** opt-in, **no-retention, no-train**,
   **output-observable** (the `Model` trailer + plain-MD result *is* the trust mechanism,
   ADR-0001/0007), scoped to captured content; **C0/BYO is the zero-operator-read floor**. **Cost:**
