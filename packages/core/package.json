@@ -12,7 +12,8 @@
     "./convention": "./src/convention/index.ts",
     "./write-client": "./src/write-client/index.ts",
     "./write-client/backends/github-rest": "./src/write-client/backends/github-rest.ts",
-    "./write-client/backends/isomorphic-git": "./src/write-client/backends/isomorphic-git.ts"
+    "./write-client/backends/isomorphic-git": "./src/write-client/backends/isomorphic-git.ts",
+    "./fts": "./src/fts/index.ts"
   },
   "dependencies": {
     "ulid": "^3.0.1",
