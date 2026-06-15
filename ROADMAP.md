@@ -1,8 +1,8 @@
-# Croft — v1 Delivery Roadmap
+# Zonot — v1 Delivery Roadmap
 
-> Hand-authored planning artifact (like `CLAUDE.md`); **not** generated from the seed. Derived from
-> [`croft-seed.md`](croft-seed.md) **rev 21**. When an ADR changes, update this file. This is the
-> input to the agent-sized task breakdown — each phase below is scoped to be handed to agents.
+> Hand-authored planning artifact (like `CLAUDE.md`). Derived from the ADR set in
+> [`docs/adr/`](docs/adr/). When an ADR changes, update this file. This is the input to the
+> agent-sized task breakdown — each phase below is scoped to be handed to agents.
 
 ## What "v1 done" means
 
@@ -19,7 +19,7 @@ daily across all three runtimes, with a real imported corpus to make search/aggr
 free/self-host — Phases 0–3 below). **v1.1** adds **managed C1** (multi-tenant custody + billing;
 first paid tier, BYO-model, ~$2–5 CAD). **v1.2** adds **guardrailed hosted inference** (opt-in
 Tier-2) — the **completeness lever** that makes the app payable standalone for the **naive, no-agent
-user** (the second of Croft's two audiences, ADR-0025/0027 rev 20; for that user it is the *only*
+user** (the second of Zonot's two audiences, ADR-0025/0027 rev 20; for that user it is the *only*
 enrichment path, not a mere convenience). Each ships and validates before the next; the larger MVP is
 consciously accepted to have a paid product that covers costs (ADR-0017/0020/0027).
 
@@ -61,8 +61,9 @@ consciously accepted to have a paid product that covers costs (ADR-0017/0020/002
   JSON-Schema emit; (c) frontmatter envelope + splitter + ULID/slug; (d) tag-normalization; (e)
   write-client interface + two stub backends; (f) FTS5 schema + facet/query layer; (g) **the
   conformance test harness**.
-- **Exit:** core emits and validates a byte-identical note+source envelope; conformance test green;
-  ULID/slug/frontmatter fully deterministic.
+- **Exit:** conformance + correctness alarms stay green during real use; the maker trusts daily
+  reliance. See [`docs/dogfood.md`](docs/dogfood.md) for the alarm taxonomy and phase-exit rule.
+  No minimum capture count gates the exit.
 
 ## Phase 1 — Worker: MCP + HTTP (the live-dogfood harness) (`apps/worker`)
 
@@ -84,16 +85,17 @@ consciously accepted to have a paid product that covers costs (ADR-0017/0020/002
   trailers + atomic commit; (c) write handlers (capture/append/correct/undo/delete) over the core;
   (d) read handlers + faceted list; (e) MCP-tool + HTTP-endpoint adapters over the shared handlers;
   (f) `init` bootstrap; (g) path-secret auth + deploy.
-- **Exit:** capture/enrich via Claude (MCP), append/correct/undo/delete, and read back — all landing
-  as plain MD with provenance in your repo. **Start dogfooding here.**
+- **Exit:** capture/enrich via Claude (MCP), append/correct/undo/delete, and read back — all
+  landing as plain MD with provenance in your repo. Correctness + reliability + trust alarms
+  (`docs/dogfood.md`) stay green during real use. **Start dogfooding here.**
 
 ## Phase 2 — CLI + the test-data importer (`apps/cli`) — interleaved with Phase 3
 
 **Goal:** Tier-0 capture, local FTS/aggregation, and enough corpus volume to tune retrieval.
 
-- **Build:** `croft init`, `croft capture` (Tier 0, direct), read/search/group commands; local FTS
+- **Build:** `zonot init`, `zonot capture` (Tier 0, direct), read/search/group commands; local FTS
   over the corpus (`bun:sqlite` FTS5 + facet columns, ADR-0008); the **minimal bulk importer**
-  (`croft import`): the maker's own notes → convention envelope + `Imported-From` provenance —
+  (`zonot import`): the maker's own notes → convention envelope + `Imported-From` provenance —
   loads a real corpus for search/aggregation testing (ADR-0029/0013).
 - **Port:** `bun:sqlite` (FTS5 default); the isomorphic-git write backend (CLI is a clone-holder);
   Bun single-binary compile + npm + provenance (ADR-0023).
@@ -101,15 +103,16 @@ consciously accepted to have a paid product that covers costs (ADR-0017/0020/002
 - **Agent tasks:** (a) CLI scaffold + command surface over the core; (b) isomorphic-git backend
   wiring; (c) local FTS + faceted grouping over `bun:sqlite`; (d) the minimal importer; (e)
   single-binary compile + npm-provenance publish pipeline.
-- **Exit:** init / capture / import a real corpus / FTS + faceted grouping all work from the CLI.
-  Now there is volume to tune ranking and aggregation.
+- **Exit:** init / capture / import a real corpus / FTS + faceted grouping all work from the
+  CLI; alarms (`docs/dogfood.md`) stay green during real use. Now there is volume to tune
+  ranking and aggregation.
 
 ## Phase 3 — Mobile app: the connected read/write bridge (`apps/mobile`) — interleaved with Phase 2
 
 **Goal:** close the loop on the phone — the wedge (ADR-0010/0025).
 
 - **Build:** core screens — capture, browse/search (FTS + faceted grouping), read, **bounded
-  correction** (edit-recent/undo/delete, ADR-0026); offline-first **local mirror + capture queue**;
+  correction** (edit/undo/delete, ADR-0026 rev 14 — available at any age); offline-first **local mirror + capture queue**;
   on-device FTS+facets over the mirror; **writes ride the edge** (capture/append/correct/undo/delete
   via the Worker, SHA-conditional, ADR-0010); secure credential storage (Keychain/Keystore).
 - **Port:** Expo RN (CNG), `op-sqlite` (FTS5 flag), Fathom local-first patterns.
@@ -117,8 +120,9 @@ consciously accepted to have a paid product that covers costs (ADR-0017/0020/002
 - **Agent tasks:** (a) Expo scaffold (CNG) + op-sqlite + monorepo hoisting; (b) local mirror + capture
   queue (offline-first, durable write ordering); (c) on-device FTS + faceted grouping; (d) the three
   screens + the correction surface; (e) edge write client + secure credential storage.
-- **Exit:** capture/read/search/aggregate/correct on the go, syncing through the edge to your repo,
-  visible on desktop (Obsidian/grep) and via Claude. **The dogfood loop is closed (v1.0).**
+- **Exit:** capture/read/search/aggregate/correct on the go, syncing through the edge to your
+  repo, visible on desktop (Obsidian/grep) and via Claude. Mobile + Worker alarms
+  (`docs/dogfood.md`) stay green during real use. **The dogfood loop is closed (v1.0).**
 
 ---
 
@@ -130,7 +134,7 @@ Built on the same core + edge; architected for from day one (multi-tenant + the 
 - **Build:** multi-tenant managed custody — OAuth 2.1 + CIMD, the GitHub App (Contents:rw +
   Metadata:r, one repo), per-request short-lived token minting, onboarding (OAuth + one-click install
   on an auto-created repo), billing (ADR-0017). BYO-model (Tier 1) — no operator inference yet.
-- **Payment rail (ADR-0033; open items in ADR-0018 #11).** **One entitlement store keyed to the Croft
+- **Payment rail (ADR-0033; open items in ADR-0018 #11).** **One entitlement store keyed to the Zonot
   account; payment sources are adapters.** Sequence **app-first:** the app's in-app subscription **must**
   use **app-store IAP** (digital goods; Apple/Google also collect tax + take the 15% small-business cut;
   reuse Fathom's RevenueCat-replacement backend for receipt validation + store server-notifications).
@@ -184,8 +188,9 @@ Built on the same core + edge; architected for from day one (multi-tenant + the 
 
 ## Explicitly NOT in v1
 
-On-*device* enrichment models · arbitrary/historical edit (the *bounded* correction surface **is** in)
-· **semantic / vector search** (lexical edge search is IN at v1.2) · device git-sync (C0) · format
+On-*device* enrichment models · **history rewrite** (the five-op correction surface — capture /
+append / edit / undo / delete — **is** in at any age, ADR-0026 rev 14) · **semantic / vector
+search** (lexical edge search is IN at v1.2) · device git-sync (C0) · format
 importers + corroboration connectors (ADR-0029) · rich/custom aggregations (ADR-0008).
 
 *(Now IN v1 — at v1.1 / v1.2: managed C1 custody + billing, guardrailed Tier-2 hosted inference, and

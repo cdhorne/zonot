@@ -1,0 +1,65 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Bun (lockfile policy: pnpm-lock.yaml is committed; bun.lockb is not used)
+.bun/
+
+# Cloudflare Worker
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# Expo
+.expo/
+*.orig.*
+web-build/
+
+# iOS (Expo CNG regenerates; do not commit prebuild output)
+ios/Pods/
+ios/build/
+ios/.xcode.env.local
+*.xcworkspace
+
+# Android (Expo CNG regenerates; do not commit prebuild output)
+android/.gradle/
+android/build/
+android/app/build/
+
+# CLI single-binary compile output
+zonot
+zonot.exe
+zonot-*
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Working scratch (planning, throwaway)
+.dev/
+.cache/
+tmp/

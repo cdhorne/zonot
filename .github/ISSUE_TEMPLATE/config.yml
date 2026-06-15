@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Issue conventions
+    url: https://github.com/cdhorne/zonot/blob/main/docs/workflow/issues.md
+    about: Scope, structure, labels, and the in-progress signal — read before opening an issue.

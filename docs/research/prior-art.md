@@ -1,27 +1,26 @@
-# Croft — Prior-Art & Research Log
+# Zonot — Prior-Art & Research Log
 
-> Hand-authored evidence log (**not** generated; lives outside the `docs/adr` + `philosophy` +
-> `architecture` generated set). These are the *sources* behind [`croft-seed.md`](../../croft-seed.md)
-> rev 11–14 — the research that informed the ADRs, captured in-repo so the *why* is observable, not
-> trapped in a chat transcript. Findings are mid-2026; treat post-cutoff specifics (e.g. star counts,
-> dates) as "verify the live numbers." This is the manual dogfood of the ethos: capture raw context
-> with provenance (ADR-0001/0007).
+> Hand-authored evidence log. These are the *sources* behind the ADRs in [`../adr/`](../adr/)
+> rev 11–14 — the research that informed the decisions, captured in-repo so the *why* is observable,
+> not trapped in a chat transcript. Findings are mid-2026; treat post-cutoff specifics (e.g. star
+> counts, dates) as "verify the live numbers." This is the manual dogfood of the ethos: capture raw
+> context with provenance ([ADR-0001](../adr/0001-observable-files.md) / [ADR-0007](../adr/0007-git-as-ledger.md)).
 
 ## 1. Competitive landscape (→ ADR-0025 / 0029)
 
 - **Closest competitor — GBrain** (`garrytan/gbrain`, ~22k stars, MIT): Markdown-in-git, but
   **Postgres = source of truth, Markdown = projection**; typed edges/graph live only in the DB.
   Ships CLI + MCP + a self-hosted `/admin` console; **no reader/web UI, no mobile read app, no hosted
-  version**. → Croft *inverts* this (files = truth) and fills the reader/mobile/hosted gap.
+  version**. → Zonot *inverts* this (files = truth) and fills the reader/mobile/hosted gap.
 - **Adjacent agent→repo:** Basic Memory (MCP notes; S3/Neon cloud, not your git), nanobrain
   (raw→wiki in your repo, Claude-Code-hook-driven), `panosAthDBX/mcp-github-memory-server`,
   `markdown-vault-mcp`. Karpathy's "LLM wiki" gist legitimized the category.
 - **PKM/editors storing plain MD in your git:** Foam, Dendron (dormant), Quartz (publish-only),
   Obsidian+Git plugin — none do capture-time agent enrichment. Logseq is moving to a proprietary
-  DB+cloud; Anytype / Obsidian-Sync are encryption-as-trust (the foil Croft defines against).
+  DB+cloud; Anytype / Obsidian-Sync are encryption-as-trust (the foil Zonot defines against).
 - **Mobile git-backed apps:** GitJournal (dart-git), GitSync.md (libgit2), GitSync (Rust),
   Obsidian-git (isomorphic-git, "unstable on mobile"). **No one ships an FTS reader on
-  RN+isomorphic-git** — Croft's whitespace.
+  RN+isomorphic-git** — Zonot's whitespace.
 - **Capture / read-later** (Drafts, Reflect, mymind, Readwise, Matter, Tana): all vendor-cloud; MD
   only as one-way export. None store in your own repo as source of truth.
 - Sources: github.com/garrytan/gbrain · github.com/basicmachines-co/basic-memory · nanobrain.app ·
@@ -46,9 +45,9 @@
 
 ## 3. Local-first / sync model (→ ADR-0010 / 0026 / 0028)
 
-- **git-as-sync is the right call** for Croft's create-mostly, single-user, no-realtime workload:
+- **git-as-sync is the right call** for Zonot's create-mostly, single-user, no-realtime workload:
   it satisfies 6/7 Ink & Switch local-first ideals; the one it misses (realtime collaboration) is
-  scoped out. CRDTs solve concurrent same-object editing — a problem Croft *designs away* (creates +
+  scoped out. CRDTs solve concurrent same-object editing — a problem Zonot *designs away* (creates +
   recency-scoped correction).
 - CRDT state is an opaque, growing blob → it would *invert* the ownership/longevity thesis.
   Practitioner consensus (Butler/Jamsocket, Weidner, Ably, the Cinapse postmortem): single-writer /

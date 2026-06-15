@@ -1,18 +1,20 @@
-# Croft — Claude Context
+# Zonot — Claude Context
 
-Croft is a **capture → enrichment → ingestion → light-read** layer over plain Markdown in a GitHub
+Zonot is a **capture → enrichment → ingestion → light-read** layer over plain Markdown in a GitHub
 repo the user owns. TypeScript throughout, **Bun** runtime, **one pnpm monorepo**. One isomorphic
 **core**; three runtimes: a Cloudflare **Worker** (edge), a Bun **CLI**, and an Expo React Native
-**app**. Ethos: **power, convenience, trust** — trust comes from observability and ownership, never
-lockdown or encryption.
+**app**. External pitch: **calm on the surface, deep underneath.** Internal design principles:
+**power, convenience, trust** — trust comes from observability and ownership, never lockdown or
+encryption.
 
 ## Source of truth
 
-The full decision record is **[`croft-seed.md`](croft-seed.md)** — 33 ADRs. This file carries only
-what must be held in working memory every session. **When this file and an ADR disagree, the ADR
-wins** (and fix this file). The `docs/adr/` tree, `docs/philosophy.md`, and `docs/architecture.md`
-are **generated from the seed doc** at `croft init` — don’t hand-edit generated files; change the
-seed doc and regenerate.
+The full decision record lives in **[`docs/adr/`](docs/adr/)** — 36 ADRs (one file each, per
+ADR-0014). This file carries only what must be held in working memory every session. **When this
+file and an ADR disagree, the ADR wins** (and fix this file). The `docs/adr/` tree,
+`docs/philosophy.md`, and `docs/architecture.md` are hand-authored. The dissolution of the seed
+(2026-06-14) retired the seed-as-generator-source model; per-ADR files and the topic docs are
+the source of truth.
 
 ## Current state
 
@@ -36,7 +38,7 @@ surface. Build order (ADR-0024): **core → Worker → (CLI + app, interleaved).
 
 ## Non-negotiables
 
-Violating any of these breaks Croft’s identity. Check against this list before designing anything.
+Violating any of these breaks Zonot’s identity. Check against this list before designing anything.
 
 - **Observability is the trust mechanism.** Every write lands as plain Markdown in the user’s own
   repo; raw input is preserved (verbatim at capture, then in git history). The operator is a
@@ -44,8 +46,10 @@ Violating any of these breaks Croft’s identity. Check against this list before
 - **Plain files, user’s repo.** Markdown, one repo per workspace, `notes/YYYY/MM/` +
   `sources/YYYY/MM/`. (ADR-0003)
 - **Captures are creates; v1 adds a bounded mutation surface.** New file per note → conflict-free.
-  v1 exposes **capture + append + correction (edit-recent / undo / delete)** (ADR-0026); arbitrary/
-  historical editing stays gated. Undo/delete are new commits (tidy `HEAD`, never rewrite history).
+  v1 exposes **capture + append + correction (edit / undo / delete)** (ADR-0026 rev 14, available
+  at any age — the bound is the op vocabulary, not time). **History rewrite (force-push) stays
+  gated**; CRDT/real-time collab stays gated; in-file edit outside the API stays gated.
+  Undo/delete are new commits (tidy `HEAD`, never rewrite history).
   (ADR-0004/0015/0026)
 - **Git history is the immutability record.** Files are mutable; the audit trail is git. Provenance
   rides in commit trailers, not an in-file array. (ADR-0007)
@@ -63,8 +67,8 @@ Violating any of these breaks Croft’s identity. Check against this list before
   DB-as-truth (GBrain) and vendor memory. (ADR-0025)
 - **Graceful obsolescence.** The operator's *and the maker's* disappearance must be a non-event for
   the user's data; **source-available, self-host-permitted open-core + C0 self-host** is the mechanism
-  (non-compete license, converts to open over time; ADR-0032). Sell convenience, never access to your
-  own data. (ADR-0027/0032)
+  (non-compete license, converts to open over time; ADR-0027 §Mechanism). Sell convenience, never access to your
+  own data. (ADR-0027 §Mechanism)
 - **Core stays web-standard; vendor/runtime specifics live in adapters** (use `createMcpHandler` for
   the MCP transport, not `McpAgent`/DOs; the v1.2 edge-search DO is a separate, deliberate adapter —
   ADR-0009). The isomorphic-git mobile benchmark is a gating spike before any device-git-sync work.
@@ -73,11 +77,15 @@ Violating any of these breaks Croft’s identity. Check against this list before
   (backends, drivers, transports, triggers, importers, connectors, model providers) is a typed
   extension point with a uniform contract (provenance, no-envelope-mutation, optional, web-standard).
   (ADR-0031)
-- **Hosted inference is opt-in, no-retention, no-train, output-observable;** C0/BYO-model is the
+- **Hosted inference is opt-in, no-train (contractually verified), retention bounded by upstream
+  provider's DPA (mitigation pending per ADR-0037), output-observable;** C0/BYO-model is the
   zero-operator-read floor. For the **naive no-agent user it is the *only* enrichment path** (MCP
   relocates but doesn't remove the model question — ADR-0002) — the **completeness lever** that makes
   the app payable standalone, so it is load-bearing for that tier, not just convenience, while staying
-  behind the clean Tier-2 seam for C0/self-host. (ADR-0027/0002/0001)
+  behind the clean Tier-2 seam for C0/self-host. (ADR-0027/0002/0001/0037)
+- **Behavioral privacy → C0.** The content-trust claim is structural at all tiers. Operator-side
+  ops telemetry (logs, metrics, Sentry) shows behavior (who did what, when). Self-host (C0) is the
+  floor for users who count behavior as in-scope. (ADR-0037)
 
 ## Architecture in one breath
 
@@ -100,20 +108,21 @@ vocab (KV on the edge, synced copy on device). (ADR-0022)
   patterns. **No on-device models in v1.**
 - **Schema:** define once (TS → JSON Schema, e.g. Zod); never duplicate a shape across MCP / HTTP /
   frontmatter / conformance.
-- **CLI distribution:** npm (`npx croft` / `npm i -g croft`) as primary, plus a compiled Bun
+- **CLI distribution:** npm (`npx zonot` / `npm i -g zonot`) as primary, plus a compiled Bun
   single binary via Homebrew + curl + GitHub Releases; publish with npm provenance. (ADR-0023)
 
 ## Canonical vocabulary
 
 `capture · source · note · thread · tier · reader · agent · workspace`. One canonical
-name per concept. **No theming** (no nautical/archive metaphors in code or docs).
+name per concept. **No theming** (no nautical/archive metaphors in code or docs; no Maya glyphs or "sacred well" mysticism; no fantasy/gaming cues. Water-feel in voice and palette, never as overt naming in code).
 
 ## Out of scope for v1 — do not build
 
 If a task drifts into these, **stop and flag** rather than gold-plating. (ADR-0020)
 
-- On-*device* enrichment/embedding models · **arbitrary/historical edit** (the *bounded* correction
-  surface — append / edit-recent / undo / delete — **is** in v1, ADR-0026) · **semantic / vector
+- On-*device* enrichment/embedding models · **history rewrite** (force-push protection; the
+  five-op correction surface — capture / append / edit / undo / delete — **is** in v1 at any age,
+  ADR-0026 rev 14) · **semantic / vector
   search** · C0 direct git sync from the app · rich/custom aggregations. **(Now IN v1, sequenced:
   managed C1 custody + billing at v1.1; guardrailed Tier-2 hosted inference + lexical edge search at
   v1.2 — ADR-0017/0027/0009.)**
@@ -150,3 +159,7 @@ eas build                # from apps/mobile (later)
 
 Solo workflow: commit to `main` (PRs only when explicitly requested). For automated/bug-fix tasks:
 minimal surgical edits, don’t run build commands, don’t modify CI workflow files.
+
+**Task tracking:** GitHub Issues with a thin convention — templates in `.github/ISSUE_TEMPLATE/`,
+full spec in [`docs/workflow/issues.md`](docs/workflow/issues.md). In-progress = assignee + linked
+draft PR (`Fixes #N`), **never** an in-issue mutation or a roadmap-file edit.
