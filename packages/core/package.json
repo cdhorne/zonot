@@ -13,7 +13,8 @@
     "./write-client": "./src/write-client/index.ts",
     "./write-client/backends/github-rest": "./src/write-client/backends/github-rest.ts",
     "./write-client/backends/isomorphic-git": "./src/write-client/backends/isomorphic-git.ts",
-    "./fts": "./src/fts/index.ts"
+    "./fts": "./src/fts/index.ts",
+    "./conformance": "./src/conformance/index.ts"
   },
   "dependencies": {
     "ulid": "^3.0.1",
