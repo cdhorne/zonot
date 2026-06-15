@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true,
+    "outDir": "./.tsbuild",
+    "jsx": "react-native"
+  },
+  "files": [],
+  "include": [],
+  "exclude": ["node_modules", "dist", "ios", "android", ".expo"]
+}

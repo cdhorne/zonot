@@ -8,8 +8,6 @@
     "noEmit": true
   },
   "include": ["src/**/*"],
-  "references": [
-    { "path": "../../packages/core" }
-  ],
+  "references": [{ "path": "../../packages/core" }],
   "exclude": ["dist", "node_modules"]
 }

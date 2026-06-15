@@ -4,12 +4,10 @@
     "composite": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "types": ["bun-types"],
+    "types": ["bun"],
     "noEmit": true
   },
   "include": ["src/**/*"],
-  "references": [
-    { "path": "../../packages/core" }
-  ],
+  "references": [{ "path": "../../packages/core" }],
   "exclude": ["dist", "node_modules"]
 }
