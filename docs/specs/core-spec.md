@@ -627,7 +627,14 @@ On any PR touching packages/core/**:
 Failure mode: the test runner prints a unified byte-diff of `expected` vs. `actual` alongside the
 producing function name and the fixture path, so the diff points directly at the regressed code.
 
-## 5. Open items (for Phase 0 to close)
+## 5. Performance budgets
+
+Per-function timing budgets — `serializeFrontmatter`, `parseFrontmatter`, `splitBody`, `slugify`,
+`normalizeTags`, `IndexWriter.upsertNote`, `SearchEngine.search` / `list` — live in
+[`perf-budgets.md`](perf-budgets.md) §2. The CI bench discipline (mitata + regression detection)
+applies per-PR.
+
+## 6. Open items (for Phase 0 to close)
 
 - **Source-vs-note disambiguation in the `raw` field — RESOLVED (ADR-0034 rev 6).** A `sources/`
   node is written **iff** `raw !== output.body` after normalization, **OR** the capture surface

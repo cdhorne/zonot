@@ -35,15 +35,16 @@ Surface: Sentry alert email to the maker; CI failure on main; runtime assertion 
 Threshold breach over a window = alert. Starting values listed; tune after first dogfood cycle.
 
 ```
-- p99 capture→ack latency > budget over trailing 15 min          (budget per ADR-0034 / worker-spec)
+- p99 capture→ack latency > budget over trailing 15 min          (budgets in [`specs/perf-budgets.md`](specs/perf-budgets.md))
 - 5xx rate > 1% over trailing 60 min
 - 4xx-conflict (412/422) rate > 5% of writes over trailing 60 min  (suggests a client bug)
 - Mobile outbox queue depth > 3 sustained > 5 min
 - Mobile any-item-stuck > 1h
-- Worker cold-start p99 > 2s over trailing 60 min
+- Worker cold-start p99 > 50ms over trailing 60 min (per perf-budgets.md §3)
 - Repo write rejected by GitHub > 0 outside known rate-limit windows
 - Token expiry within 7 days without successful refresh (v1.1+)
-- FTS query p99 > budget on the local mirror over trailing 60 min (budget per ADR-0034 §5)
+- FTS query p99 over local mirror > budget (per perf-budgets.md §4 CLI / §5 mobile)
+- CI bench regression > 2× baseline on any tracked function (per perf-budgets.md §6)
 ```
 
 Surface: Analytics Engine queries + Sentry alert rules; mobile in-app passive notifications.
@@ -118,9 +119,13 @@ prove green without traffic). Degraded days don't reset the calendar but they re
 ## Alarm config home
 
 Operator-side alarm configuration lives in the Sentry + Cloudflare Analytics Engine setup
-(see `docs/specs/worker-spec.md` §2.2–2.3 for the underlying observability surface).
-Client-side alarm thresholds (mobile queue depth, stuck items) live in
-`docs/specs/mobile-spec.md` §3.5.
+(see [`specs/worker-spec.md`](specs/worker-spec.md) §2.2–2.3 for the underlying observability
+surface). Client-side alarm thresholds (mobile queue depth, stuck items) live in
+[`specs/mobile-spec.md`](specs/mobile-spec.md) §3.5.
 
 CI alarms (conformance + invariant fixtures) live in the test suite at
-`packages/core/test/conformance/` (per `docs/specs/core-spec.md` §4).
+`packages/core/test/conformance/` (per [`specs/core-spec.md`](specs/core-spec.md) §4).
+
+Per-runtime latency / throughput / memory budgets — which the reliability alarms watch — live in
+[`specs/perf-budgets.md`](specs/perf-budgets.md). CI bench discipline (regression detection,
+baseline storage, scope per runtime) is in §6 of that doc.

@@ -385,7 +385,13 @@ note body / tag / title content** — same content-free rule as the Worker.
 `zonot doctor` lists recent crashes with paste-able trace ids. The user attaches the dump when
 filing an issue.
 
-## 9. Open items
+## 9. Performance budgets
+
+Per-operation latency / throughput / memory budgets — cold start, capture, search, import
+throughput, idle memory — live in [`perf-budgets.md`](perf-budgets.md) §4. The CI bench
+discipline (mitata + regression detection) applies per-PR.
+
+## 10. Open items
 
 - **Sentry on the CLI** — deferred; revisit at v1.1.
 - **`--from=obsidian|gbrain|markdown` preset details** — v1.0 ships `markdown` (the generic

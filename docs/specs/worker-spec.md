@@ -304,6 +304,10 @@ Every row is a config / backend swap; no architecture change.
 
 ### 4.2 Cold-start budget
 
+> Full per-operation latency table lives in [`perf-budgets.md`](perf-budgets.md) §3. This
+> section names the Worker-side cost model the budgets bake in.
+
+
 - Workers cold start: 5-20 ms (Wrangler v3 / V8 isolates).
 - KV read on cold start: ~5-15 ms.
 - GitHub REST round-trip: 300-1500 ms — **the dominant cost.**
