@@ -61,9 +61,9 @@ UNKNOWN  passed through, in input-order, after COULD
 function slugify(input: { title?: string; id: string }): string {
   if (!input.title || input.title.trim() === '') return input.id;
 
-  const nfc = input.title.normalize('NFC');
-  const ascii = nfc
-    .replace(/\p{Diacritic}/gu, '')      // strip combining marks
+  const nfd = input.title.normalize('NFD'); // decompose, so combining marks split off
+  const ascii = nfd
+    .replace(/\p{Diacritic}/gu, '')      // strip combining marks (é → e, ü → u)
     .replace(/[^\p{L}\p{N}\s-]/gu, ' ')  // non-letter/number/space/hyphen → space
     .toLowerCase()
     .trim()

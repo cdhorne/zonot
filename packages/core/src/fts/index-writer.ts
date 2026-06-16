@@ -120,7 +120,7 @@ export class IndexWriter {
           note.source_id ?? null,
         );
 
-      // FTS5 contentless: delete + insert at the same rowid.
+      // FTS5 (contentful): delete + reinsert at the same rowid.
       this.#db.prepare(`DELETE FROM notes_fts WHERE rowid = ?`).run(rowid);
       this.#db
         .prepare(`INSERT INTO notes_fts(rowid, title, tags_text, body) VALUES (?, ?, ?, ?)`)

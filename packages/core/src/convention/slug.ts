@@ -8,8 +8,8 @@ export function slugify(input: { title?: string; id: string }): string {
   if (!title || title.trim() === '') return input.id;
 
   const cleaned = title
-    .normalize('NFC')
-    .replace(/\p{Diacritic}/gu, '') // strip combining marks
+    .normalize('NFD') // decompose so combining marks become standalone codepoints
+    .replace(/\p{Diacritic}/gu, '') // strip combining marks (é → e, ü → u)
     .replace(/[^\p{L}\p{N}\s-]/gu, ' ') // non-letter/number/space/hyphen → space
     .toLowerCase()
     .trim()

@@ -49,11 +49,15 @@ export const DDL_STATEMENTS: ReadonlyArray<string> = [
   ) WITHOUT ROWID`,
   `CREATE INDEX IF NOT EXISTS notes_aliases_alias ON notes_aliases(alias)`,
 
+  // Contentful FTS5 (the index stores its own copy of the text). This is the
+  // standard pattern: plain `DELETE FROM notes_fts WHERE rowid = ?` works, and
+  // snippet()/highlight() can return real excerpts. The note body is duplicated
+  // into the index, which is acceptable at v1 scale; the canonical truth is
+  // still the user's repo, so the whole DB stays derivable/disposable (ADR-0001).
   `CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
     title,
     tags_text,
     body,
-    content='',
     tokenize='unicode61 remove_diacritics 2'
   )`,
 

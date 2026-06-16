@@ -24,6 +24,7 @@ describe('isValidUlid', () => {
     expect(isValidUlid('01hzzza1b2c3d4e5f6g7h8j9k0')).toBe(false);
     expect(isValidUlid('01HZZZ')).toBe(false);
     expect(isValidUlid('01HZZZA1B2C3D4E5F6G7H8J9I0')).toBe(false); // 'I' is excluded
-    expect(isValidUlid('01HZZZA1B2C3D4E5F6G7H8J9L0')).toBe(true); // 'L' is allowed
+    expect(isValidUlid('01HZZZA1B2C3D4E5F6G7H8J9L0')).toBe(false); // 'L' is excluded (Crockford base32 omits I, L, O, U)
+    expect(isValidUlid('01HZZZA1B2C3D4E5F6G7H8J9V0')).toBe(true); // 'V' is allowed
   });
 });
