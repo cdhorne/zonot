@@ -9,20 +9,21 @@
 
 import type { ExecutionContext } from '@cloudflare/workers-types';
 import { NotFoundError } from '@zonot/core/errors';
-import type { Env, RequestContext } from './env.ts';
+import type { Env } from './env.ts';
 import { handleHttp } from './http.ts';
 import { logRequest } from './log.ts';
+import { handleMcp } from './mcp.ts';
 import { isServerError, problemResponse, toZonotProblem } from './problem.ts';
 import { newTraceId, withTraceHeader } from './trace.ts';
 
 export default {
-  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, _execCtx: ExecutionContext): Promise<Response> {
     const trace_id = newTraceId();
     const startedAt = Date.now();
     const url = new URL(request.url);
 
     try {
-      const res = await route(request, env, { trace_id });
+      const res = await route(request, env, trace_id);
       logRequest({
         trace_id,
         workspace_hash: null,
@@ -55,28 +56,30 @@ export default {
   },
 };
 
-/**
- * Route table. Phase 1(a): a health probe only; unknown paths 404 as a problem.
- * The write/read/MCP routes mount here in 1(e).
- */
-async function route(request: Request, env: Env, ctx: RequestContext): Promise<Response> {
+/** Route table: health probe, the MCP transport (agent), the HTTP transport (app). */
+async function route(request: Request, env: Env, trace_id: string): Promise<Response> {
   const url = new URL(request.url);
 
   if (request.method === 'GET' && url.pathname === '/healthz') {
     return Response.json({ status: 'ok', service: 'zonot-worker' });
   }
 
-  // The HTTP transport (app + integrators). The MCP transport mounts in 1(e)-ii.
+  // MCP transport (Claude-as-agent): /v1/{workspace}/{secret}/mcp — all methods.
+  if (url.pathname.startsWith('/v1/') && url.pathname.endsWith('/mcp')) {
+    return handleMcp(request, env, trace_id);
+  }
+
+  // HTTP transport (app + integrators).
   if (url.pathname.startsWith('/v1/')) {
-    return handleHttp(request, env, ctx.trace_id);
+    return handleHttp(request, env, trace_id);
   }
 
   throw new NotFoundError(`route ${request.method} ${url.pathname}`);
 }
 
-/** Collapse concrete ids/slugs to a route template so logs stay content-free. */
+/** Collapse the workspace, path-secret, and ids to a template so logs leak nothing. */
 function pathShape(pathname: string): string {
   return pathname
-    .replace(/\/[0-9A-HJKMNP-TV-Z]{26}(?:-[^/]*)?/g, '/:id')
-    .replace(/\/v1\/w\/[^/]+/, '/v1/w/:workspace');
+    .replace(/^\/v1\/[^/]+\/[^/]+/, '/v1/:workspace/:secret')
+    .replace(/\/[0-9A-HJKMNP-TV-Z]{26}(?:-[^/]*)?/g, '/:id');
 }

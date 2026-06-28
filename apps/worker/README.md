@@ -33,7 +33,28 @@ Path-secret auth (ADR-0013) — `{secret}` is the workspace's `path_secret` from
 Writes accept an `Idempotency-Key` header (core-spec §3.4). Errors are RFC 9457
 `application/problem+json`; every response carries `zonot-trace-id`.
 
-The **MCP transport** (Claude-as-agent capture) is not yet wired — see the Phase 1(e)-ii TODO.
+## MCP transport (Claude-as-agent)
+
+Stateless, Durable-Object-free, via the MCP SDK's web-standard Streamable HTTP
+transport (the same transport `createMcpHandler` wraps — used directly so the
+Worker carries no `agents` dependency; ADR-0022 / ADR-0028).
+
+- **Endpoint:** `/v1/{workspace}/{secret}/mcp` (same path-secret auth as HTTP).
+- **Tools:** `capture`, `append`, `correct`, `undo`, `delete`, `read_note`,
+  `list_recent`, `list_tags`, `init` — the workspace is never a tool argument
+  (it comes from the authenticated URL).
+
+Point an MCP client (e.g. Claude) at the endpoint:
+
+```jsonc
+// claude_desktop_config.json (or any MCP client)
+{ "mcpServers": { "zonot": { "url": "https://<your-worker>/v1/personal/<secret>/mcp" } } }
+```
+
+> **Deploy smoke test (owner-run):** unit + runtime construction are covered by
+> `bun test`, but the full streamable-HTTP round trip is only exercised against a
+> live Worker. After `wrangler deploy`, connect an MCP client and call `init`
+> then `capture`, and confirm the note lands in your repo.
 
 ## Local dev + deploy
 
