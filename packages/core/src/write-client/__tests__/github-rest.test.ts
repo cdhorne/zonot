@@ -233,4 +233,46 @@ describe('GitHubRestBackend', () => {
     const res = await backend.capture({ workspace: 'personal', output: { body: 'first ever' } });
     expect(gh.headFiles().has(res.path)).toBe(true);
   });
+
+  test('listRecent returns newest-first summaries, honoring limit', async () => {
+    const backend = makeBackend(gh);
+    const a = await backend.capture({ workspace: 'personal', output: { title: 'A', body: 'a' } });
+    const b = await backend.capture({
+      workspace: 'personal',
+      output: { title: 'B', tags: ['x'], body: 'b' },
+    });
+    const c = await backend.capture({ workspace: 'personal', output: { title: 'C', body: 'c' } });
+
+    const all = await backend.listRecent({ workspace: 'personal' });
+    expect(all.map((s) => s.id)).toEqual([c.id, b.id, a.id]); // newest first
+    expect(all[1]?.title).toBe('B');
+    expect(all[1]?.tags).toEqual(['x']);
+
+    const top2 = await backend.listRecent({ workspace: 'personal', limit: 2 });
+    expect(top2.map((s) => s.id)).toEqual([c.id, b.id]);
+  });
+
+  test('listRecent on an empty repo is []', async () => {
+    expect(await makeBackend(gh).listRecent({ workspace: 'personal' })).toEqual([]);
+  });
+
+  test('listTags counts across the corpus and filters by prefix', async () => {
+    const backend = makeBackend(gh);
+    await backend.capture({
+      workspace: 'personal',
+      output: { tags: ['work', 'urgent'], body: '1' },
+    });
+    await backend.capture({ workspace: 'personal', output: { tags: ['work'], body: '2' } });
+    await backend.capture({ workspace: 'personal', output: { tags: ['home'], body: '3' } });
+
+    const tags = await backend.listTags({ workspace: 'personal' });
+    expect(tags).toEqual([
+      { tag: 'work', count: 2 },
+      { tag: 'home', count: 1 },
+      { tag: 'urgent', count: 1 },
+    ]);
+
+    const w = await backend.listTags({ workspace: 'personal', prefix: 'wo' });
+    expect(w).toEqual([{ tag: 'work', count: 2 }]);
+  });
 });

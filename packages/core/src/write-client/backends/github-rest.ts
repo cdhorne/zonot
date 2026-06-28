@@ -1,7 +1,8 @@
-// GitHubRestBackend — the stateless Worker-side write backend (ADR-0022 / 0013;
-// worker-spec §4). Implements the WriteClient over the GitHub Git Data API so a
-// note + its source land in ONE commit (atomic; worker-spec §4.3). Provenance
-// rides in commit trailers (ADR-0007), never frontmatter.
+// GitHubRestBackend — the stateless Worker-side GitHub REST adapter (ADR-0022 /
+// 0013; worker-spec §4). Implements the WriteClient over the GitHub Git Data API
+// so a note + its source land in ONE commit (atomic; worker-spec §4.3), plus the
+// v1.0 tree-walk reads (listRecent/listTags) until the edge index lands (v1.2).
+// Provenance rides in commit trailers (ADR-0007), never frontmatter.
 //
 // SHA discipline (authority-or-bust, worker-spec §4.3): every conditional op
 // refetches the head tree and compares the note's current blob sha to the
@@ -45,9 +46,13 @@ import type {
   HeadResult,
   InitInput,
   InitResult,
+  ListRecentInput,
+  ListTagsInput,
   NoteRecord,
+  NoteSummary,
   ReadInput,
   SourceRecord,
+  TagSummary,
   UndoInput,
   WriteResult,
 } from '../../schema/index.ts';
@@ -145,6 +150,11 @@ export class GitHubRestBackend implements WriteClient {
   // --- capture -------------------------------------------------------------
 
   async capture(input: CaptureInput): Promise<WriteResult> {
+    // capture_id := note id. A note's identity IS its creating capture, so undo
+    // (which resolves by capture_id) and delete (which resolves by id) share
+    // one by-id resolution path and differ only by intent trailer (ADR-0026
+    // "the split is intent-signalling"). Every later mutation event gets its own
+    // fresh Capture-Id, so git history keeps unique per-event ids throughout.
     const id = this.#newId();
     const created = this.#now();
     const slug = slugify(
@@ -265,8 +275,8 @@ export class GitHubRestBackend implements WriteClient {
   // --- undo / delete -------------------------------------------------------
 
   async undo(input: UndoInput): Promise<WriteResult> {
-    // capture_id resolves to the note it created (capture_id := note id at
-    // capture time). Removes note + source as a delete-commit with Undo-Of.
+    // capture_id == the note id (see capture). Removes note + source as a
+    // delete-commit stamped Undo-Of; identical resolution to delete, different intent.
     return this.#removeNote(input.capture_id, {
       subjectVerb: 'undo',
       subjectArg: input.capture_id,
@@ -325,6 +335,51 @@ export class GitHubRestBackend implements WriteClient {
     if (!head) return null;
     const note = findNote(input.id, await this.#getTreeEntries(head.treeSha));
     return note ? { sha: note.sha, path: note.path } : null;
+  }
+
+  // --- v1.0 tree-walk reads ------------------------------------------------
+  // listRecent / listTags walk the GitHub tree and parse note blobs on each
+  // call (no edge index until v1.2 — ADR-0009). They are NOT part of the
+  // WriteClient interface; the Worker calls them on the concrete class. Cost:
+  // listRecent reads ~limit blobs; listTags reads every note blob (O(repo)).
+  // Both are superseded by the SearchEngine over the materialized index at v1.2.
+
+  /** Most-recent notes as summaries (newest first), optionally bounded by `since`. */
+  async listRecent(input: ListRecentInput): Promise<NoteSummary[]> {
+    const limit = clampLimit(input.limit);
+    const head = await this.#getHead();
+    if (!head) return [];
+    const notePaths = notePathsNewestFirst(await this.#getTreeEntries(head.treeSha));
+
+    const summaries: NoteSummary[] = [];
+    for (const entry of notePaths) {
+      if (summaries.length >= limit) break;
+      const parsed = parseNoteFile(await this.#getBlobUtf8(entry.sha), entry.path);
+      if (input.since && parsed.frontmatter.created < input.since) continue;
+      summaries.push(toSummary(entry.path, parsed.frontmatter));
+    }
+    // Path order ≈ created order (ULID time-prefix); sort the page precisely.
+    summaries.sort((a, b) => (a.created < b.created ? 1 : a.created > b.created ? -1 : 0));
+    return summaries;
+  }
+
+  /** Tag → count across the whole corpus, optionally filtered by prefix. */
+  async listTags(input: ListTagsInput): Promise<TagSummary[]> {
+    const head = await this.#getHead();
+    if (!head) return [];
+    const notePaths = notePathsNewestFirst(await this.#getTreeEntries(head.treeSha));
+
+    const counts = new Map<string, number>();
+    for (const entry of notePaths) {
+      const parsed = parseNoteFile(await this.#getBlobUtf8(entry.sha), entry.path);
+      for (const tag of parsed.frontmatter.tags) {
+        if (input.prefix && !tag.startsWith(input.prefix)) continue;
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+    }
+    return [...counts]
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count || (a.tag < b.tag ? -1 : 1));
   }
 
   // --- shared mutation paths -----------------------------------------------
@@ -561,6 +616,44 @@ function findSource(sourceId: string, entries: TreeEntry[]): { path: string; sha
   const re = new RegExp(`^sources/\\d{4}/\\d{2}/${sourceId}\\.md$`);
   const hit = entries.find((e) => e.type === 'blob' && re.test(e.path));
   return hit ? { path: hit.path, sha: hit.sha } : null;
+}
+
+const NOTE_PATH = /^notes\/\d{4}\/\d{2}\/[0-9A-HJKMNP-TV-Z]{26}-.*\.md$/;
+
+/** Note blobs sorted newest-first by path (paths embed YYYY/MM then the ULID). */
+function notePathsNewestFirst(entries: TreeEntry[]): TreeEntry[] {
+  return entries
+    .filter((e) => e.type === 'blob' && NOTE_PATH.test(e.path))
+    .sort((a, b) => (a.path < b.path ? 1 : a.path > b.path ? -1 : 0));
+}
+
+function toSummary(
+  path: string,
+  fm: {
+    id: string;
+    title?: string | undefined;
+    tags: string[];
+    type?: string | undefined;
+    thread?: string | undefined;
+    created: string;
+    updated?: string | undefined;
+  },
+): NoteSummary {
+  return {
+    id: fm.id,
+    path,
+    title: fm.title ?? '',
+    tags: fm.tags,
+    type: fm.type ?? 'note',
+    ...(fm.thread ? { thread: fm.thread } : {}),
+    created: fm.created,
+    ...(fm.updated ? { updated: fm.updated } : {}),
+  };
+}
+
+function clampLimit(limit: number | undefined): number {
+  if (limit === undefined) return 20;
+  return Math.max(1, Math.min(100, limit));
 }
 
 /** A capture body always ends with a newline; an empty body becomes one blank line. */
