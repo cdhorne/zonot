@@ -28,17 +28,20 @@ export function deterministicUlid(timeMs: number, seed: string): string {
     time = CROCKFORD[t % 32] + time;
     t = Math.floor(t / 32);
   }
-  let state = cyrb53(seed) >>> 0;
+  // Two interleaved 32-bit LCGs seeded from both cyrb53 halves (≈64-bit state);
+  // emit the mixed HIGH bits — low bits of a power-of-two LCG are low quality.
+  let [a, b] = cyrb53(seed);
   let rand = '';
   for (let i = 0; i < 16; i++) {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0; // LCG
-    rand += CROCKFORD[state % 32];
+    a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
+    b = (Math.imul(b, 22695477) + 1) >>> 0;
+    rand += CROCKFORD[((a ^ b) >>> 27) & 31];
   }
   return time + rand;
 }
 
-/** cyrb53 — a fast, well-distributed non-cryptographic string hash. */
-function cyrb53(str: string): number {
+/** cyrb53 — a fast, well-distributed non-cryptographic string hash (both 32-bit halves). */
+function cyrb53(str: string): [number, number] {
   let h1 = 0xdeadbeef;
   let h2 = 0x41c6ce57;
   for (let i = 0; i < str.length; i++) {
@@ -48,5 +51,5 @@ function cyrb53(str: string): number {
   }
   h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return 2097152 * (h2 >>> 0) + (h1 >>> 11);
+  return [h1 >>> 0, h2 >>> 0];
 }

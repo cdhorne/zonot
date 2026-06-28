@@ -10,6 +10,12 @@ describe('deterministicUlid', () => {
     // Later time → lexicographically greater (ULIDs sort by time).
     expect(deterministicUlid(1720000000000, 'notes/inbox.md') > a).toBe(true);
   });
+
+  test('distinct seeds at the same millisecond do not collide at scale', () => {
+    const ids = new Set<string>();
+    for (let i = 0; i < 5000; i++) ids.add(deterministicUlid(1710000000000, `notes/file-${i}.md`));
+    expect(ids.size).toBe(5000); // ~64-bit entropy → no collisions
+  });
 });
 
 describe('generateUlid', () => {

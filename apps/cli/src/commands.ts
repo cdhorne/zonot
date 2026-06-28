@@ -271,10 +271,15 @@ export async function cmdImport(args: ParsedArgs): Promise<number> {
   if (!ws.mirror_path) throw new ConfigError(`workspace "${name}" has no mirror_path`);
   if (!existsSync(`${ws.mirror_path}/.git`)) throw new WorkspaceNotInitializedError(ws.mirror_path);
 
+  if (flagStr(args.flags, 'from')) {
+    process.stderr.write(
+      'zonot import: --from presets land in v1.1; importing as generic markdown\n',
+    );
+  }
+
   const plan = planImport(path, ws.mirror_path);
   const s = makeStyle(args);
-  const news = plan.notes.filter((n) => n.status === 'new').length;
-  const updates = plan.notes.length - news;
+  const count = (status: string) => plan.notes.filter((n) => n.status === status).length;
 
   if (flagBool(args.flags, 'dry-run')) {
     emitLines(
@@ -286,7 +291,7 @@ export async function cmdImport(args: ParsedArgs): Promise<number> {
       },
     );
     process.stderr.write(
-      `${s.muted(`plan: ${plan.notes.length} notes — ${news} new, ${updates} update`)}\n`,
+      `${s.muted(`plan: ${plan.notes.length} notes — ${count('new')} new, ${count('update')} update, ${count('unchanged')} unchanged`)}\n`,
     );
     return EXIT.ok;
   }
@@ -295,9 +300,15 @@ export async function cmdImport(args: ParsedArgs): Promise<number> {
   const result = await runImport(plan, ws.mirror_path, gitAuthor(), batch);
   emit(
     args,
-    { committed: result.committed, commits: result.commits, new: news, update: updates },
+    {
+      written: result.written,
+      unchanged: result.unchanged,
+      commits: result.commits,
+      new: count('new'),
+      update: count('update'),
+    },
     () =>
-      `${s.accent('✓')} imported ${result.committed} notes in ${result.commits} commit${result.commits === 1 ? '' : 's'}`,
+      `${s.accent('✓')} imported ${result.written} note${result.written === 1 ? '' : 's'} (${result.unchanged} unchanged) in ${result.commits} commit${result.commits === 1 ? '' : 's'}`,
   );
   return EXIT.ok;
 }

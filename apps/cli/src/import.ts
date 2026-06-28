@@ -1,8 +1,12 @@
 // Bulk importer (cli-spec §7). Walks a folder of Markdown, synthesizes the
-// convention envelope (deterministic id so reruns don't duplicate), preserves the
-// verbatim original as a sources/ node, and commits in batches with an
-// Imported-From trailer. Commits via isomorphic-git directly — batched, which the
-// single-note WriteClient.capture surface doesn't model.
+// convention envelope, preserves the verbatim original as a sources/ node, and
+// commits in batches with an Imported-From trailer. Commits via isomorphic-git
+// directly (batched).
+//
+// Identity is keyed on (relpath, ctime) — stable across content edits — and the
+// target path is resolved by that id, so editing a note's title/date updates it
+// in place (honoring path immutability, core-spec §1.4) instead of orphaning the
+// old file. Re-importing an unchanged file is a no-op.
 
 import nodeFs, { readdirSync, readFileSync, statSync } from 'node:fs';
 import {
@@ -15,6 +19,7 @@ import {
   deriveSourcePath,
   deterministicUlid,
   generateUlid,
+  isValidUlid,
   normalizeTags,
   parseFrontmatterLoose,
   slugify,
@@ -26,79 +31,97 @@ import { VERSION } from './version.ts';
 const SOURCE = `import:zonot@${VERSION}`;
 const SKIP_DIRS = new Set(['.git', 'node_modules']);
 
+export type ImportStatus = 'new' | 'update' | 'unchanged';
+
 export interface PlannedNote {
   relpath: string;
   notePath: string;
   sourcePath?: string;
   noteContent: string;
   sourceContent?: string;
-  status: 'new' | 'update';
+  status: ImportStatus;
 }
 
 export interface ImportPlan {
   notes: PlannedNote[];
-  skipped: number;
 }
 
-/** Build the import plan: discover files, synthesize the envelope, detect re-imports. */
 export function planImport(root: string, mirrorPath: string): ImportPlan {
+  const noteIndex = indexById(mirrorPath, 'notes', (name) => name.slice(0, 26));
+  const sourceIndex = indexById(mirrorPath, 'sources', (name) => name.replace(/\.md$/, ''));
   const notes: PlannedNote[] = [];
-  const skipped = 0;
 
   for (const rel of discover(root)) {
     const abs = `${root}/${rel}`;
     const raw = readFileSync(abs, 'utf8');
+    const st = statSync(abs);
     const { data, body } = parseFrontmatterLoose(raw);
-    const createdAt = createdMs(data, statSync(abs).ctimeMs);
-    const created = new Date(createdAt).toISOString();
 
-    // Deterministic id keyed on (relpath, created) → reruns don't duplicate (§7.2).
-    const id = deterministicUlid(createdAt, rel);
+    // Identity anchor = (created, relpath). `created` is the frontmatter date when
+    // present (stable — users rarely edit it) → the id is stable across content/
+    // title edits, so resolve-by-id finds the existing note. NOT ctime, which a
+    // write bumps. The id's ULID timestamp therefore equals `created` (correct).
+    const createdMs = resolveCreatedMs(data, st);
+    const created = new Date(createdMs).toISOString();
+    const id = deterministicUlid(createdMs, rel);
     const title = stringField(data, 'title');
     const tags = normalizeTags([...frontmatterTags(data), ...parseInline(body).tags]);
     const type = stringField(data, 'type') ?? 'note';
 
+    // Resolve the target by id → re-import updates in place, never orphans (§7.5 intent).
     const slug = slugify(title === undefined ? { id } : { title, id });
-    const notePath = deriveNotePath({ id, slug, created });
+    const notePath = noteIndex.get(id) ?? deriveNotePath({ id, slug, created });
 
-    // The imported file (with its original frontmatter) differs from the rendered
-    // note, so a sources/ node preserves the verbatim original (cli-spec §7.3).
-    const sourceId = deterministicUlid(createdAt, `${rel}#source`);
-    const sourcePath = deriveSourcePath({ id: sourceId, created });
-    const sourceFm = buildSourceFrontmatter({ id: sourceId, created, noteId: id, source: SOURCE });
+    // A sources/ node only when the verbatim original differs from the note body
+    // (byte-equality rule, ADR-0034 — a frontmatter-less file needs none).
+    const noteBody = ensureTrailingNewline(body);
+    const rawFull = ensureTrailingNewline(raw);
+    let sourcePath: string | undefined;
+    let sourceContent: string | undefined;
+    let sourceId: string | undefined;
+    if (rawFull !== noteBody) {
+      sourceId = deterministicUlid(createdMs, `${rel}#source`);
+      sourcePath = sourceIndex.get(sourceId) ?? deriveSourcePath({ id: sourceId, created });
+      sourceContent = assembleSourceFile(
+        buildSourceFrontmatter({ id: sourceId, created, noteId: id, source: SOURCE }),
+        rawFull,
+      );
+    }
 
-    // Provenance (incl. the origin relpath) rides in the commit trailer, NOT
-    // frontmatter (ADR-0007). The note frontmatter carries no workspace.
+    // Provenance (incl. origin relpath) rides in the commit trailer, never
+    // frontmatter (ADR-0007). Notes carry no workspace.
     const noteFm = buildNoteFrontmatter({
       id,
       created,
       output: { ...(title !== undefined ? { title } : {}), tags, type },
-      sourceId,
+      ...(sourceId ? { sourceId } : {}),
     });
+    const noteContent = assembleNoteFile(noteFm, noteBody);
 
     notes.push({
       relpath: rel,
       notePath,
-      sourcePath,
-      noteContent: assembleNoteFile(noteFm, ensureTrailingNewline(body)),
-      sourceContent: assembleSourceFile(sourceFm, ensureTrailingNewline(raw)),
-      status: existsInTree(mirrorPath, notePath) ? 'update' : 'new',
+      ...(sourcePath ? { sourcePath } : {}),
+      noteContent,
+      ...(sourceContent ? { sourceContent } : {}),
+      status: classify(mirrorPath, notePath, noteContent, noteIndex.has(id)),
     });
   }
 
-  return { notes, skipped };
+  return { notes };
 }
 
-/** Execute a plan: write the files and commit in batches with Imported-From. */
+/** Execute a plan: write changed files and commit in batches with Imported-From. */
 export async function runImport(
   plan: ImportPlan,
   mirrorPath: string,
   author: { name: string; email: string },
   batchSize: number,
-): Promise<{ committed: number; commits: number }> {
+): Promise<{ written: number; unchanged: number; commits: number }> {
+  const changed = plan.notes.filter((n) => n.status !== 'unchanged');
   let commits = 0;
-  for (let i = 0; i < plan.notes.length; i += batchSize) {
-    const batch = plan.notes.slice(i, i + batchSize);
+  for (let i = 0; i < changed.length; i += batchSize) {
+    const batch = changed.slice(i, i + batchSize);
     for (const note of batch) {
       writeFile(mirrorPath, note.notePath, note.noteContent);
       await git.add({ fs: nodeFs, dir: mirrorPath, filepath: note.notePath });
@@ -113,7 +136,7 @@ export async function runImport(
       author,
       message: buildCommitMessage({
         subject: `import: ${batch.length} note${batch.length === 1 ? '' : 's'}`,
-        // Per-note origins are preserved here (comma-joined for a batch).
+        // Per-note origins preserved here (comma-joined for a batch).
         trailers: {
           source: SOURCE,
           captureId: generateUlid(),
@@ -123,7 +146,7 @@ export async function runImport(
     });
     commits++;
   }
-  return { committed: plan.notes.length, commits };
+  return { written: changed.length, unchanged: plan.notes.length - changed.length, commits };
 }
 
 // --- discovery + synthesis helpers -----------------------------------------
@@ -146,13 +169,54 @@ function discover(root: string): string[] {
   return out.sort();
 }
 
-function createdMs(data: Record<string, unknown>, ctimeMs: number): number {
-  const candidate = stringField(data, 'created') ?? stringField(data, 'date');
-  if (candidate) {
-    const t = Date.parse(candidate);
+/** Map existing note/source id → its repo-relative path, for resolve-by-id. */
+function indexById(
+  mirrorPath: string,
+  sub: string,
+  idOf: (name: string) => string,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  const root = `${mirrorPath}/${sub}`;
+  let entries: string[];
+  try {
+    entries = readdirSync(root, { recursive: true }) as string[];
+  } catch {
+    return map;
+  }
+  for (const p of entries) {
+    if (typeof p !== 'string' || !p.endsWith('.md')) continue;
+    const rel = p.replaceAll('\\', '/');
+    const id = idOf(rel.slice(rel.lastIndexOf('/') + 1));
+    if (isValidUlid(id)) map.set(id, `${sub}/${rel}`);
+  }
+  return map;
+}
+
+/** `created` in ms: frontmatter date/created → file ctime → mtime. */
+function resolveCreatedMs(
+  data: Record<string, unknown>,
+  st: { ctimeMs: number; mtimeMs: number },
+): number {
+  const fm = stringField(data, 'created') ?? stringField(data, 'date');
+  if (fm) {
+    const t = Date.parse(fm);
     if (!Number.isNaN(t)) return t;
   }
-  return Math.floor(ctimeMs);
+  return Math.floor(st.ctimeMs || st.mtimeMs);
+}
+
+function classify(
+  mirrorPath: string,
+  notePath: string,
+  content: string,
+  existed: boolean,
+): ImportStatus {
+  if (!existed) return 'new';
+  try {
+    return readFileSync(`${mirrorPath}/${notePath}`, 'utf8') === content ? 'unchanged' : 'update';
+  } catch {
+    return 'update';
+  }
 }
 
 function frontmatterTags(data: Record<string, unknown>): string[] {
@@ -165,15 +229,6 @@ function frontmatterTags(data: Record<string, unknown>): string[] {
 function stringField(data: Record<string, unknown>, key: string): string | undefined {
   const v = data[key];
   return typeof v === 'string' && v.trim() !== '' ? v : undefined;
-}
-
-function existsInTree(mirrorPath: string, relpath: string): boolean {
-  try {
-    statSync(`${mirrorPath}/${relpath}`);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function writeFile(mirrorPath: string, relpath: string, content: string): void {

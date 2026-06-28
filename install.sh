@@ -25,14 +25,29 @@ esac
 
 asset="zonot-${os}-${arch}"
 if [ "$VERSION" = "latest" ]; then
-  url="https://github.com/${REPO}/releases/latest/download/${asset}"
+  base="https://github.com/${REPO}/releases/latest/download"
 else
-  url="https://github.com/${REPO}/releases/download/${VERSION}/${asset}"
+  base="https://github.com/${REPO}/releases/download/${VERSION}"
 fi
 
 tmp="$(mktemp)"
 echo "zonot: downloading ${asset} (${VERSION})…"
-curl -fSL --progress-bar "$url" -o "$tmp"
+curl -fSL --progress-bar "${base}/${asset}" -o "$tmp"
+
+# Verify the SHA-256 against the published checksums (supply-chain trust, ADR-0001).
+sums="$(mktemp)"
+if curl -fsSL "${base}/checksums.txt" -o "$sums"; then
+  expected="$(awk -v a="$asset" '$2 == a {print $1}' "$sums")"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$tmp" | awk '{print $1}')"
+  else
+    actual="$(shasum -a 256 "$tmp" | awk '{print $1}')"
+  fi
+  if [ -n "$expected" ] && [ "$expected" != "$actual" ]; then
+    echo "zonot: checksum mismatch for ${asset} — refusing to install" >&2
+    exit 1
+  fi
+fi
 chmod +x "$tmp"
 
 # Install without sudo when BIN_DIR isn't writable.

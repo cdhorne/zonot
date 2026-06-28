@@ -123,10 +123,9 @@ function splitFrontmatter(content: string, path: string): { yamlSrc: string; bod
   if (end === -1) {
     throw new NoteFileParseError(path, 'unterminated frontmatter block');
   }
-  // join('\n') is the exact inverse of split('\n'): the body round-trips verbatim.
   return {
     yamlSrc: lines.slice(1, end).join('\n'),
-    body: lines.slice(end + 1).join('\n'),
+    body: lines.slice(end + 1).join('\n'), // verbatim round-trip
   };
 }
 

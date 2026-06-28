@@ -201,14 +201,14 @@ describe('import (bulk)', () => {
     return dir;
   }
 
-  test('imports a folder; tags merge (frontmatter + inline); re-import is idempotent', async () => {
+  test('imports a folder; tags merge (frontmatter + inline); re-import is a no-op', async () => {
     await run(() => cmdInit(parseArgs(['init'])));
     const dir = vault();
 
-    const first = await run<{ committed: number; new: number }>(() =>
+    const first = await run<{ written: number; new: number }>(() =>
       cmdImport(parseArgs(['import', dir])),
     );
-    expect(first.json).toMatchObject({ committed: 2, new: 2 });
+    expect(first.json).toMatchObject({ written: 2, new: 2 });
     expect(await runLines(() => cmdList(parseArgs(['list'])))).toHaveLength(2);
 
     const tags = await runLines<{ tag: string }>(() => cmdTags(parseArgs(['tags'])));
@@ -218,12 +218,34 @@ describe('import (bulk)', () => {
     const hits = await runLines<{ path: string }>(() => cmdSearch(parseArgs(['search', 'alpha'])));
     expect(hits[0]?.path).toMatch(/^notes\/2024\/03\//);
 
-    // Re-import: deterministic ids → updates, not duplicates.
-    const second = await run<{ new: number; update: number }>(() =>
+    // Re-import unchanged → nothing written, no new commit.
+    const second = await run<{ written: number; unchanged: number }>(() =>
       cmdImport(parseArgs(['import', dir])),
     );
-    expect(second.json).toMatchObject({ new: 0, update: 2 });
-    expect(await runLines(() => cmdList(parseArgs(['list'])))).toHaveLength(2); // still 2
+    expect(second.json).toMatchObject({ written: 0, unchanged: 2 });
+    expect(await runLines(() => cmdList(parseArgs(['list'])))).toHaveLength(2);
+  });
+
+  test('editing a note title + re-importing updates in place (no orphan)', async () => {
+    await run(() => cmdInit(parseArgs(['init'])));
+    const dir = join(home, 'vault-edit');
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, 'note.md');
+    writeFileSync(file, '---\ntitle: Original\ntags: [t]\ndate: 2024-01-01\n---\nbody\n');
+    await run(() => cmdImport(parseArgs(['import', dir])));
+    const before = await runLines<{ id: string; path: string }>(() => cmdList(parseArgs(['list'])));
+    expect(before).toHaveLength(1);
+
+    // Same file, edited title → same id (keyed on ctime), updates the existing note.
+    writeFileSync(file, '---\ntitle: Renamed\ntags: [t]\ndate: 2024-01-01\n---\nbody changed\n');
+    const re = await run<{ written: number; update: number }>(() =>
+      cmdImport(parseArgs(['import', dir])),
+    );
+    expect(re.json).toMatchObject({ update: 1 });
+    const after = await runLines<{ id: string; path: string }>(() => cmdList(parseArgs(['list'])));
+    expect(after).toHaveLength(1); // not duplicated
+    expect(after[0]?.id).toBe(before[0]?.id); // same identity
+    expect(after[0]?.path).toBe(before[0]?.path); // path immutable (kept original slug)
   });
 
   test('--dry-run plans without writing anything', async () => {

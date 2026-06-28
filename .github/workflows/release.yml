@@ -31,6 +31,14 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          cd apps/cli
+          npm version "$V" --no-git-tag-version --allow-same-version
+          sed -i "s/export const VERSION = '.*'/export const VERSION = '$V'/" src/version.ts
+
       # Bun cross-compiles every target from this one Linux runner.
       - name: Build binaries + checksums
         working-directory: apps/cli
@@ -46,6 +54,7 @@ jobs:
 
   npm:
     name: npm publish (provenance)
+    needs: binaries # don't ship to npm if the binaries failed (no split-brain release)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -62,6 +71,14 @@ jobs:
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          cd apps/cli
+          npm version "$V" --no-git-tag-version --allow-same-version
+          sed -i "s/export const VERSION = '.*'/export const VERSION = '$V'/" src/version.ts
 
       # pnpm publish (not npm) resolves the workspace: protocol; prepublishOnly
       # bundles dist/index.js with core + deps inlined (no runtime deps shipped).
