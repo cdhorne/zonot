@@ -18,6 +18,7 @@
     "./conformance": "./src/conformance/index.ts"
   },
   "dependencies": {
+    "isomorphic-git": "^1.38.5",
     "ulid": "^3.0.1",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"

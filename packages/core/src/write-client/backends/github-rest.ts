@@ -17,17 +17,9 @@
 
 import {
   assembleNoteFile,
-  assembleSourceFile,
-  buildNoteFrontmatter,
-  buildSourceFrontmatter,
-  deriveNotePath,
-  deriveSourcePath,
   generateUlid,
-  normalizeTags,
   parseNoteFile,
   parseSourceFile,
-  slugify,
-  splitBody,
 } from '../../convention/index.ts';
 import {
   NotFoundError,
@@ -58,6 +50,7 @@ import type {
   WriteResult,
 } from '../../schema/index.ts';
 import type { WriteClient } from '../interface.ts';
+import { commitSubject, prepareAppend, prepareCapture, prepareCorrect } from '../shared.ts';
 
 export interface GitHubRestBackendConfig {
   owner: string;
@@ -154,59 +147,32 @@ export class GitHubRestBackend implements WriteClient {
     // capture_id := note id, so undo (by capture_id) and delete (by id) resolve
     // identically and differ only by intent trailer (ADR-0026).
     const id = this.#newId();
-    const created = this.#now();
-    const slug = slugify(
-      input.output.title === undefined ? { id } : { title: input.output.title, id },
-    );
-    const notePath = deriveNotePath({ id, slug, created });
-
-    const files: CommitFile[] = [];
-    let sourceId: string | undefined;
-    let sourcePath: string | undefined;
-
-    // A source node is written iff a distinct verbatim `raw` was supplied
-    // (core-spec §3.5 / §6 — byte-identical raw+body writes no source node).
-    if (input.raw !== undefined && input.raw !== input.output.body) {
-      sourceId = this.#newId();
-      sourcePath = deriveSourcePath({ id: sourceId, created });
-      const sfm = buildSourceFrontmatter({
-        id: sourceId,
-        created,
-        noteId: id,
-        source: this.#source,
-      });
-      files.push({
-        path: sourcePath,
-        content: assembleSourceFile(sfm, ensureTrailingNewline(input.raw)),
-      });
-    }
-
-    const nfm = buildNoteFrontmatter({
+    const prepared = prepareCapture(input, {
       id,
-      created,
-      workspace: input.workspace,
-      thread: input.thread,
-      output: input.output,
-      sourceId,
-    });
-    files.push({
-      path: notePath,
-      content: assembleNoteFile(nfm, ensureBodyShape(input.output.body)),
+      created: this.#now(),
+      source: this.#source,
+      newSourceId: this.#newId,
     });
 
-    const message = buildCommitMessage({
-      subject: subject('capture', input.output.title, id),
-      trailers: { source: this.#source, captureId: id },
-    });
-    const commit_sha = await this.#mutate(files, message);
+    const files: CommitFile[] = prepared.source
+      ? [prepared.source, prepared.note]
+      : [prepared.note];
+
+    const commit_sha = await this.#mutate(
+      files,
+      buildCommitMessage({
+        subject: commitSubject('capture', input.output.title, id),
+        trailers: { source: this.#source, captureId: id },
+      }),
+    );
 
     return {
       id,
-      path: notePath,
-      ...(sourcePath ? { source_path: sourcePath } : {}),
+      path: prepared.note.path,
+      ...(prepared.source ? { source_path: prepared.source.path } : {}),
       commit_sha,
-      url: this.#blobUrl(notePath),
-      applied_tags: nfm.tags,
+      url: this.#blobUrl(prepared.note.path),
+      applied_tags: prepared.applied_tags,
       capture_id: id,
     };
   }
@@ -215,17 +181,11 @@ export class GitHubRestBackend implements WriteClient {
 
   async append(input: AppendInput): Promise<WriteResult> {
     return this.#conditionalEdit(input.id, input.base_sha, (parsed) => {
-      const compiled = parsed.body_compiled.replace(/\n+$/, '');
-      const existing = parsed.body_timeline.replace(/^\n+/, '').replace(/\n+$/, '');
-      const block = input.block.replace(/\n+$/, '');
-      const timeline = existing ? `${existing}\n${block}` : block;
-      const body = `${compiled}\n\n---\n\n${timeline}\n`;
-
-      const fm = { ...parsed.frontmatter, updated: this.#now() };
+      const { body, frontmatter } = prepareAppend(parsed, input.block, this.#now());
       const captureId = this.#newId();
       return {
         body,
-        frontmatter: fm,
+        frontmatter,
         captureId,
         message: buildCommitMessage({
           subject: `append to ${input.id}`,
@@ -239,27 +199,14 @@ export class GitHubRestBackend implements WriteClient {
 
   async correct(input: CorrectInput): Promise<WriteResult> {
     return this.#conditionalEdit(input.id, input.base_sha, (parsed) => {
-      // output.body replaces the compiled body; the timeline is preserved
-      // (core-spec §3.2). A divider inside output.body is a cut point — anything
-      // below it is dropped, not merged into the timeline.
-      const newCompiled = splitBody(input.output.body).compiled.replace(/\n+$/, '');
-      const timeline = parsed.body_timeline.replace(/^\n+/, '').replace(/\n+$/, '');
-      const body = timeline ? `${newCompiled}\n\n---\n\n${timeline}\n` : `${newCompiled}\n`;
-
-      // Spread the existing frontmatter so aliases + tolerant pass-through keys
-      // survive (ADR-0005); overwrite only the facets the correction supplies.
-      const fm = { ...parsed.frontmatter, updated: this.#now() };
-      if (input.output.title !== undefined) fm.title = input.output.title;
-      if (input.output.type !== undefined) fm.type = input.output.type;
-      if (input.output.tags !== undefined) fm.tags = normalizeTags(input.output.tags);
-
+      const { body, frontmatter } = prepareCorrect(parsed, input.output, this.#now());
       const captureId = this.#newId();
       return {
         body,
-        frontmatter: fm,
+        frontmatter,
         captureId,
         message: buildCommitMessage({
-          subject: subject('correct', input.output.title, input.id),
+          subject: commitSubject('correct', input.output.title, input.id),
           trailers: { source: this.#source, captureId, editOf: input.id },
         }),
       };
@@ -658,22 +605,6 @@ function toSummary(
 function clampLimit(limit: number | undefined): number {
   if (limit === undefined) return 20;
   return Math.max(1, Math.min(100, limit));
-}
-
-/** A capture body always ends with a newline; an empty body becomes one blank line. */
-function ensureBodyShape(body: string): string {
-  if (body === '') return '\n';
-  return ensureTrailingNewline(body);
-}
-
-function ensureTrailingNewline(s: string): string {
-  return s.endsWith('\n') ? s : `${s}\n`;
-}
-
-/** Single-line commit subject; collapses any whitespace, falls back to the id. */
-function subject(verb: string, title: string | undefined, id: string): string {
-  const t = title?.replace(/\s+/g, ' ').trim();
-  return t ? `${verb}: ${t}` : `${verb}: ${id}`;
 }
 
 function retryAfterSeconds(res: Response): number {
