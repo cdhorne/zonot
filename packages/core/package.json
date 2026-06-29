@@ -10,6 +10,7 @@
     "./schema": "./src/schema/index.ts",
     "./errors": "./src/errors/index.ts",
     "./convention": "./src/convention/index.ts",
+    "./design": "./src/design/index.ts",
     "./provenance": "./src/provenance/index.ts",
     "./write-client": "./src/write-client/index.ts",
     "./write-client/backends/github-rest": "./src/write-client/backends/github-rest.ts",
