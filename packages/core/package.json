@@ -17,7 +17,8 @@
     "./write-client/backends/github-rest": "./src/write-client/backends/github-rest.ts",
     "./write-client/backends/isomorphic-git": "./src/write-client/backends/isomorphic-git.ts",
     "./fts": "./src/fts/index.ts",
-    "./conformance": "./src/conformance/index.ts"
+    "./conformance": "./src/conformance/index.ts",
+    "./capture": "./src/capture/index.ts"
   },
   "dependencies": {
     "isomorphic-git": "^1.38.5",

@@ -3,7 +3,8 @@
 // Triggered on foreground, connectivity-change, and a manual "retry now".
 
 import type { WorkerClient } from '@zonot/core/edge';
-import type { Outbox } from './outbox.ts';
+import type { WriteResult } from '@zonot/core/schema';
+import type { Outbox, OutboxRow } from './outbox.ts';
 import { nextAttemptAt } from './retry.ts';
 
 const BATCH = 10;
@@ -14,15 +15,28 @@ export interface TickResult {
   failed: number;
 }
 
+export interface SyncHooks {
+  /** Called after a row is marked SYNCED — used to reconcile the local mirror
+   *  (a provisional capture gets rebuilt under its real server id). */
+  onSynced?: (row: OutboxRow, result: WriteResult) => void;
+}
+
 export class SyncWorker {
   readonly #outbox: Outbox;
   readonly #client: WorkerClient;
   readonly #now: () => number;
+  readonly #hooks: SyncHooks;
 
-  constructor(outbox: Outbox, client: WorkerClient, now: () => number = Date.now) {
+  constructor(
+    outbox: Outbox,
+    client: WorkerClient,
+    now: () => number = Date.now,
+    hooks: SyncHooks = {},
+  ) {
     this.#outbox = outbox;
     this.#client = client;
     this.#now = now;
+    this.#hooks = hooks;
   }
 
   async tick(): Promise<TickResult> {
@@ -41,6 +55,7 @@ export class SyncWorker {
       switch (outcome.kind) {
         case 'synced':
           this.#outbox.markSynced(row.id, outcome.result.commit_sha);
+          this.#hooks.onSynced?.(row, outcome.result);
           result.synced++;
           break;
         case 'conflict':
