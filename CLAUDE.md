@@ -163,6 +163,29 @@ ADRs. Known up front:
   The index is disposable (ADR-0001), so delete-the-file-and-reindex is the simplest correct reset.
   Rebuild is gated on git HEAD moving since the last build (covers commits/pulls, not uncommitted
   working-tree edits). (Phase 2c)
+- **op-sqlite's `executeSync` runs only the FIRST statement of a multi-statement string.** bun:sqlite
+  and node:sqlite `exec` run all of them; op-sqlite doesn't. So any DDL the mobile adapter executes
+  must be a per-statement array (`Outbox` DDL, the mirror `notes` table), looped one `exec` per
+  statement — mirroring core's `DDL_STATEMENTS`. (Phase 3b)
+- **The mobile local mirror is a `notes` content table + the core FTS index derived from it** — the
+  same files→mirror→derived-index shape as the CLI, but with no git clone (C0 device git sync is out
+  of v1). The read view needs full note bytes (raw-md / source / backlinks), which the FTS index
+  doesn't retain, so `notes` holds them. The tarball seed is deferred (spec §5.4), so in v1.0 the
+  mirror only accumulates the user's own captures. (Phase 3c)
+- **The note `id` is server-generated** (the capture backend mints the ULID; `CaptureInput` carries
+  none). So the device shows a *provisional* optimistic note under a locally-minted id and reconciles
+  on ack (`put` the real-id note + `remove` the provisional one) — driven by `SyncWorker`'s `onSynced`
+  hook so the worker stays pure/testable. Trust `WriteResult.path` on reconcile (server time can
+  bucket the note into a different `notes/YYYY/MM/` than the device-derived path). (Phase 3c/3d)
+- **`prepareCapture` (and the other pure op builders) are exposed from `@zonot/core/write-client`** —
+  they import only `convention`, never a backend, so the mobile bundle reuses them for byte-identical
+  optimistic notes without pulling in isomorphic-git/GitHub REST. The chip parser is at
+  `@zonot/core/capture` (`parseCapture`): @thread is **last-wins**, !type first-wins, `!context` is
+  rejected with a danger chip (`ChipSpec.invalid`); parse at SAVE, not just the debounced strip, or a
+  fast save drops facets (spec §2.2). (Phase 3c/3d)
+- **Mobile `tsconfig` must set `allowImportingTsExtensions: true`** — the expo base omits it, but core
+  is consumed from source with explicit `.ts` import specifiers (the monorepo source-resolution rule),
+  so without it mobile typecheck fails `TS5097`. (Phase 3a)
 
 ## Running things
 
