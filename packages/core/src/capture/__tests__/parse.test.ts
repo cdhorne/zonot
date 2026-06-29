@@ -20,12 +20,32 @@ describe('parseCapture', () => {
     expect(body.slice(s, e)).toBe('@thread');
   });
 
-  test('normalizes + dedups tags; thread/type are first-wins', () => {
+  test('normalizes + dedups tags; thread is last-wins, type is first-wins', () => {
     const p = parseCapture('#Foo #foo #FOO @one @two !a !b');
     expect(p.tags).toEqual(['foo']);
-    expect(p.thread).toBe('one');
-    expect(p.type).toBe('a');
+    expect(p.thread).toBe('two'); // @thread last-wins (spec §2.2)
+    expect(p.type).toBe('a'); // !type first-wins
     expect(p.chips).toHaveLength(3); // one tag, one thread, one type
+    expect(p.chips.find((c) => c.kind === 'thread')?.value).toBe('two');
+  });
+
+  test('recognizes a token preceded by "(" but not mid-word', () => {
+    const p = parseCapture('see (#design) but not pre#fix or a#b');
+    expect(p.tags).toEqual(['design']);
+  });
+
+  test('rejects the source-only !context with a danger chip; sets no type', () => {
+    const p = parseCapture('a thought !context');
+    expect(p.type).toBeUndefined();
+    const chip = p.chips.find((c) => c.value === 'context');
+    expect(chip?.invalid).toBe(true);
+    expect(chip?.enabled).toBe(false);
+  });
+
+  test('a valid !type still wins when a !context is also present', () => {
+    const p = parseCapture('!context then !task');
+    expect(p.type).toBe('task');
+    expect(p.chips.find((c) => c.value === 'context')?.invalid).toBe(true);
   });
 
   test('ignores tokens inside fenced code blocks', () => {

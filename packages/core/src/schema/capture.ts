@@ -12,6 +12,9 @@ export const chipSpecSchema = z.object({
   sigil: z.enum(['#', '@', '!']),
   enabled: z.boolean(),
   range: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]),
+  // A recognized-but-rejected token (e.g. the source-only `!context`); the UI
+  // renders it in a `danger` state and it contributes nothing to frontmatter.
+  invalid: z.boolean().optional(),
 });
 export type ChipSpec = z.infer<typeof chipSpecSchema>;
 

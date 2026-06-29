@@ -9,13 +9,31 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 const DEBOUNCE_MS = 250;
 
-export interface ChipState {
-  chips: ChipSpec[]; // enabled reflects the toggle state
-  toggle: (id: string) => void;
+export interface Facets {
   title: string | undefined;
   tags: string[];
   thread: string | undefined;
   type: string | undefined;
+}
+
+export interface ChipState {
+  chips: ChipSpec[]; // enabled reflects the toggle state
+  toggle: (id: string) => void;
+  /** Effective facets from a *fresh* parse of `text`, honoring toggles. Call at
+   *  save so a capture within the debounce window keeps its facets (spec §2.2:
+   *  "apply at save AND debounced during typing"). */
+  resolve: (text: string) => Facets;
+}
+
+/** Effective facets from a parsed body, excluding toggled-off + invalid chips. */
+function facetsFrom(chips: ChipSpec[], title: string | undefined): Facets {
+  const live = chips.filter((c) => c.enabled && !c.invalid);
+  return {
+    title,
+    tags: live.filter((c) => c.kind === 'tag').map((c) => c.value),
+    thread: live.find((c) => c.kind === 'thread')?.value,
+    type: live.find((c) => c.kind === 'type')?.value,
+  };
 }
 
 export function useChips(body: string): ChipState {
@@ -32,7 +50,7 @@ export function useChips(body: string): ChipState {
   }, [body]);
 
   const chips = useMemo<ChipSpec[]>(
-    () => parsed.chips.map((c) => ({ ...c, enabled: !disabled.has(c.id) })),
+    () => parsed.chips.map((c) => ({ ...c, enabled: c.invalid ? false : !disabled.has(c.id) })),
     [parsed, disabled],
   );
 
@@ -44,19 +62,16 @@ export function useChips(body: string): ChipState {
       return next;
     });
 
-  // Effective facets — only enabled chips contribute to frontmatter.
-  const enabled = (kind: ChipSpec['kind']) =>
-    chips.filter((c) => c.kind === kind && c.enabled).map((c) => c.value);
-  const tags = enabled('tag');
-  const thread = enabled('thread')[0];
-  const type = enabled('type')[0];
-
-  return {
-    chips,
-    toggle,
-    title: parsed.title,
-    tags,
-    ...(thread !== undefined ? { thread } : { thread: undefined }),
-    ...(type !== undefined ? { type } : { type: undefined }),
+  // Re-parse the latest body at save and re-apply the toggle state, so a save
+  // inside the debounce window submits the current facets — not the stale ones.
+  const resolve = (text: string): Facets => {
+    const fresh = parseCapture(text);
+    const withToggles = fresh.chips.map((c) => ({
+      ...c,
+      enabled: c.invalid ? false : !disabled.has(c.id),
+    }));
+    return facetsFrom(withToggles, fresh.title);
   };
+
+  return { chips, toggle, resolve };
 }

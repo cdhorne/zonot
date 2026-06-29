@@ -1,5 +1,9 @@
 // Date helpers for the browse feed (mobile-spec §6) and sync details (§4).
 // Pure + bun-testable; all input is ISO-8601 UTC (house standard).
+//
+// NOTE (follow-up): bucketing is computed in UTC, so "Today/Yesterday" and the
+// HH:MM queue rows can be off by a day/hours near local midnight for non-UTC
+// users. A local-time pass needs TZ-pinned tests; deferred from v1.0 scaffold.
 
 export type DayBucket = { key: string; label: string };
 

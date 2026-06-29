@@ -108,5 +108,8 @@ function retryAfter(res: Response): number | undefined {
   const h = res.headers.get('retry-after');
   if (!h) return undefined;
   const n = Number(h);
-  return Number.isFinite(n) ? n : undefined;
+  if (Number.isFinite(n)) return n; // delta-seconds form
+  const date = Date.parse(h); // HTTP-date form
+  if (!Number.isNaN(date)) return Math.max(0, Math.round((date - Date.now()) / 1000));
+  return undefined;
 }

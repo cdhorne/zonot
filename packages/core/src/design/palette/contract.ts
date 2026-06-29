@@ -9,7 +9,10 @@ export interface PaletteContract {
   /** Brand/accent primitives (accent.solid / .muted / .text resolve here). */
   brand: {
     solid: string;
+    /** Low-emphasis accent bg in light mode. */
     muted: string;
+    /** Low-emphasis accent bg in dark mode (a translucent accent over dark surfaces). */
+    mutedDark: string;
     text: string;
   };
   /** Bright→dark neutral ramp; surfaces/text/borders pick steps per mode. */

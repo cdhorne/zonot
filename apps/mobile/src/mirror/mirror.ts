@@ -111,6 +111,16 @@ export class Mirror {
     });
   }
 
+  /** Wipe every note + its FTS rows (a true reset; the mirror is derivable). */
+  clear(): void {
+    this.#db.transaction(() => {
+      for (const { id } of this.#db.prepare(`SELECT id FROM notes`).all<{ id: string }>()) {
+        this.#writer.delete(id);
+      }
+      this.#db.exec(`DELETE FROM notes`);
+    });
+  }
+
   /** Full note bytes for the read view, or null if not mirrored locally. */
   getContent(id: string): string | null {
     return (

@@ -49,7 +49,10 @@ export const useSync = create<SyncState>((set, get) => ({
           source: 'mobile',
           provisional: false,
         });
-        mirror.put(note);
+        // Trust the Worker's committed path (server time may bucket it into a
+        // different notes/YYYY/MM/ than the device-derived path). created stays
+        // optimistic until a future read-back.
+        mirror.put({ ...note, path: result.path });
         if (result.id !== row.id) mirror.remove(row.id);
       },
     });

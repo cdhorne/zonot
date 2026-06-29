@@ -1,14 +1,15 @@
 // The shipping Zonot palette (brand-bearing). Calm-on-the-surface: deep clear
-// blues/teals as the accent (cenote water, not murky), bright/airy neutrals.
-// Placeholder values pending a design pass — see mobile-spec §1.1. The semantic
-// token names stay neutral so this module is swappable.
+// blues/teals as the accent, bright/airy neutrals. Placeholder values pending a
+// design pass — see mobile-spec §1.1. The semantic token names stay neutral so
+// this module is swappable (re-brand = swap this file; the roles auto-resolve).
 
 import type { PaletteContract } from './contract.ts';
 
 export const zonotPalette: PaletteContract = {
   brand: {
     solid: '#0e7490', // teal-700 — primary action, selected
-    muted: '#cffafe', // teal-100 — low-emphasis accent bg
+    muted: '#cffafe', // teal-100 — low-emphasis accent bg (light)
+    mutedDark: 'rgba(8,145,178,0.22)', // translucent teal-600 — accent bg (dark)
     text: '#0891b2', // teal-600 — accent-colored text
   },
   neutral: {

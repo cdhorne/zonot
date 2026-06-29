@@ -55,10 +55,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     await AsyncStorage.removeItem(ACTIVE_KEY);
     if (wipeMirror) {
       // The mirror is derivable from the repo, so wiping is always safe.
-      const mirror = getMirror();
-      for (const note of mirror.listRecent({ workspace: workspace ?? '', limit: 10_000 })) {
-        mirror.remove(note.id);
-      }
+      getMirror().clear();
     }
     set({ status: 'unconfigured', workspace: null, endpoint: null });
   },

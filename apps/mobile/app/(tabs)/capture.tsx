@@ -3,7 +3,7 @@
 // sync flush. Save never blocks on sync state.
 
 import type { CaptureInput } from '@zonot/core/schema';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useChips } from '@/capture/useChips';
@@ -22,20 +22,30 @@ export default function Capture() {
   const [body, setBody] = useState('');
   const [savedAt, setSavedAt] = useState(false);
   const chipState = useChips(body);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    },
+    [],
+  );
 
   const canSave = body.trim() !== '' && workspace !== null;
 
   function onSave() {
     if (!canSave || !workspace) return;
+    // Parse at save (not the debounced strip state) so fast saves keep facets.
+    const facets = chipState.resolve(body);
     const input: CaptureInput = {
       workspace,
       output: {
         body,
-        ...(chipState.title !== undefined ? { title: chipState.title } : {}),
-        ...(chipState.tags.length > 0 ? { tags: chipState.tags } : {}),
-        ...(chipState.type !== undefined ? { type: chipState.type } : {}),
+        ...(facets.title !== undefined ? { title: facets.title } : {}),
+        ...(facets.tags.length > 0 ? { tags: facets.tags } : {}),
+        ...(facets.type !== undefined ? { type: facets.type } : {}),
       },
-      ...(chipState.thread !== undefined ? { thread: chipState.thread } : {}),
+      ...(facets.thread !== undefined ? { thread: facets.thread } : {}),
     };
     saveCapture(input); // DURABLE
     haptics.light();
@@ -43,7 +53,8 @@ export default function Capture() {
     setSavedAt(true);
     refreshCounts();
     void flush(); // → SYNCED in the background
-    setTimeout(() => setSavedAt(false), 1200);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setSavedAt(false), 1200);
   }
 
   return (
