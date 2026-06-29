@@ -1,0 +1,7 @@
+# Expo / CNG — native projects are generated (prebuild / EAS), not committed.
+.expo/
+dist/
+web-build/
+/ios
+/android
+*.orig.*

@@ -21,6 +21,10 @@ pre-commit:
       run: pnpm --filter zonot typecheck
       glob: "apps/cli/**/*.ts"
 
+    - name: typecheck-mobile
+      run: pnpm --filter @zonot/mobile typecheck
+      glob: "apps/mobile/**/*.{ts,tsx}"
+
 pre-push:
   jobs:
     - name: full-ci

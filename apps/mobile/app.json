@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Zonot",
+    "slug": "zonot",
+    "scheme": "zonot",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.zonot.mobile"
+    },
+    "android": {
+      "package": "app.zonot.mobile",
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      ["expo-splash-screen", { "backgroundColor": "#ffffff" }]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
