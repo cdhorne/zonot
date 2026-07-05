@@ -32,15 +32,21 @@ import {
 import { GitHubRestBackend } from '@zonot/core/write-client/backends/github-rest';
 import type { z } from 'zod';
 import type { Env, WorkspaceContext } from './env.ts';
+import { getGitHubToken } from './github-token.ts';
 import { kvIdempotencyStore, withIdempotency } from './idempotency.ts';
 import { enforceRateLimit } from './ratelimit.ts';
 
-/** Build the GitHub adapter for this request. `source` becomes the provenance trailer. */
-export function createBackend(ctx: WorkspaceContext, source: string): GitHubRestBackend {
+/** Build the GitHub adapter for this request. `source` becomes the provenance
+ *  trailer. Async because App credentials mint their token here (github-token.ts). */
+export async function createBackend(
+  ctx: WorkspaceContext,
+  env: Env,
+  source: string,
+): Promise<GitHubRestBackend> {
   return new GitHubRestBackend({
     owner: ctx.resolution.owner,
     repo: ctx.resolution.repo,
-    token: ctx.resolution.token,
+    token: await getGitHubToken(ctx, env),
     source,
     ...(ctx.resolution.branch ? { branch: ctx.resolution.branch } : {}),
   });
@@ -75,7 +81,7 @@ export async function runCapture(
     workspace: ctx.workspace,
   });
   await enforceRateLimit(env, ctx.workspace_hash, 'capture');
-  const backend = createBackend(ctx, source);
+  const backend = await createBackend(ctx, env, source);
   return withIdempotency(idemStore(env), ctx.workspace, idemKey, input, () =>
     backend.capture(input),
   );
@@ -95,7 +101,7 @@ export async function runAppend(
     id,
   });
   await enforceRateLimit(env, ctx.workspace_hash, 'append');
-  const backend = createBackend(ctx, source);
+  const backend = await createBackend(ctx, env, source);
   return withIdempotency(idemStore(env), ctx.workspace, idemKey, input, () =>
     backend.append(input),
   );
@@ -115,7 +121,7 @@ export async function runCorrect(
     id,
   });
   await enforceRateLimit(env, ctx.workspace_hash, 'correct');
-  const backend = createBackend(ctx, source);
+  const backend = await createBackend(ctx, env, source);
   return withIdempotency(idemStore(env), ctx.workspace, idemKey, input, () =>
     backend.correct(input),
   );
@@ -134,7 +140,7 @@ export async function runUndo(
     capture_id: captureId,
   });
   await enforceRateLimit(env, ctx.workspace_hash, 'undo');
-  return createBackend(ctx, source).undo(input);
+  return (await createBackend(ctx, env, source)).undo(input);
 }
 
 export async function runDelete(
@@ -150,7 +156,7 @@ export async function runDelete(
     id,
   });
   await enforceRateLimit(env, ctx.workspace_hash, 'delete');
-  return createBackend(ctx, source).delete(input);
+  return (await createBackend(ctx, env, source)).delete(input);
 }
 
 export async function runInit(
@@ -163,7 +169,7 @@ export async function runInit(
     conventionVersion: 1,
   });
   await enforceRateLimit(env, ctx.workspace_hash, 'init');
-  return createBackend(ctx, source).init(input);
+  return (await createBackend(ctx, env, source)).init(input);
 }
 
 // --- reads -----------------------------------------------------------------
@@ -181,7 +187,7 @@ export async function runReadNote(
     include_source: includeSource,
   });
   await enforceRateLimit(env, ctx.workspace_hash, 'read');
-  return createBackend(ctx, source).readNote(input);
+  return (await createBackend(ctx, env, source)).readNote(input);
 }
 
 export async function runListRecent(
@@ -195,7 +201,7 @@ export async function runListRecent(
     workspace: ctx.workspace,
   });
   await enforceRateLimit(env, ctx.workspace_hash, 'list');
-  return createBackend(ctx, source).listRecent(input);
+  return (await createBackend(ctx, env, source)).listRecent(input);
 }
 
 export async function runListTags(
@@ -209,5 +215,5 @@ export async function runListTags(
     workspace: ctx.workspace,
   });
   await enforceRateLimit(env, ctx.workspace_hash, 'tags');
-  return createBackend(ctx, source).listTags(input);
+  return (await createBackend(ctx, env, source)).listTags(input);
 }

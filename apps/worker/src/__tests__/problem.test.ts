@@ -6,6 +6,7 @@ import {
   UpstreamRateLimitedError,
   ValidationError,
 } from '@zonot/core/errors';
+import { EntitlementInactiveError } from '../entitlement.ts';
 import { problemResponse, toZonotProblem } from '../problem.ts';
 
 const TRACE = '01HZZZA1B2C3D4E5F6G7H8J9K0';
@@ -51,6 +52,12 @@ describe('toZonotProblem', () => {
     expect(p.status).toBe(500);
     expect(p.type).toBe('https://zonot.app/problems/internal');
     expect(p.detail).toBe('an internal error occurred');
+  });
+
+  test('EntitlementInactiveError → 403 entitlement-inactive', () => {
+    const p = toZonotProblem(new EntitlementInactiveError('personal'), TRACE);
+    expect(p.status).toBe(403);
+    expect(p.type).toBe('https://zonot.app/problems/entitlement-inactive');
   });
 
   test('unknown error → 500 internal', () => {

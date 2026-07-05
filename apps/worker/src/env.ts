@@ -20,6 +20,12 @@ export interface Env {
   /** Entitlement store, managed (v1.1) deployments only (managed-spec §2).
    *  Absent in v1.0 / self-host → the static-map resolver is authoritative. */
   ENTITLEMENT?: import('@cloudflare/workers-types').KVNamespace;
+  /** GitHub App credentials, managed deployments only (managed-spec §4). The
+   *  private keys are PKCS#8 PEM; _PREVIOUS carries the outgoing key during
+   *  the 24h rotation overlap (ADR-0037 rotation table). */
+  GITHUB_APP_ID?: string;
+  GITHUB_APP_PRIVATE_KEY?: string;
+  GITHUB_APP_PRIVATE_KEY_PREVIOUS?: string;
   /** Rate-limit binding (absent in local dev). */
   RATE_LIMITER?: RateLimiter;
   /** Metrics binding (absent in local dev). */
@@ -30,13 +36,19 @@ export interface Env {
   RELEASE_SHA?: string;
 }
 
-/** One resolved workspace entry from the static map. */
+/** How the Worker authenticates to GitHub for a workspace (managed-spec §4/§7):
+ *  the v1.0 static-map PAT, or a v1.1 App installation minted per request. */
+export type GitHubCredential =
+  | { kind: 'pat'; token: string }
+  | { kind: 'app'; installation_id: number };
+
+/** A dispatched workspace: the repo coordinates + how to authenticate to it.
+ *  Built by the v1.0 static-map dispatch or the v1.1 entitlement dispatch —
+ *  handlers never see which (worker-spec §3.4). */
 export interface WorkspaceResolution {
   owner: string;
   repo: string;
-  token: string;
-  /** Shared secret embedded in the request URL (path-secret auth, v1.0). */
-  path_secret: string;
+  credential: GitHubCredential;
   branch?: string;
 }
 

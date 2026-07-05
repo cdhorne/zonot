@@ -1,9 +1,22 @@
 // Workspace dispatch (worker-spec §3.1). Every request resolves a workspace
-// before any handler runs. v1.0 reads a static JSON map from a secret; the
-// resolver is the single swap point for the v1.1 entitlement-store KV lookup.
+// before any handler runs. Two dispatchers, one output shape: the v1.0
+// static-map + path-secret dispatch (self-host default) and the v1.1
+// entitlement dispatch (managed mode). The auth-mode switch that routes
+// between them is task 4(c) (managed-spec §3.1).
 
 import { NotFoundError, UnauthorizedError } from '@zonot/core/errors';
-import type { Env, WorkspaceContext, WorkspaceResolution } from './env.ts';
+import { EntitlementInactiveError, type EntitlementStore, isEntitled } from './entitlement.ts';
+import type { Env, WorkspaceContext } from './env.ts';
+
+/** One entry in the WORKSPACE_MAP_JSON secret (v1.0 operator config). */
+export interface StaticWorkspaceEntry {
+  owner: string;
+  repo: string;
+  token: string;
+  /** Shared secret embedded in the request URL (path-secret auth, v1.0). */
+  path_secret: string;
+  branch?: string;
+}
 
 /** SHA-256 hash of the workspace name — the only workspace identifier that ever
  *  reaches logs/metrics/Sentry (worker-spec §2.1 forbidden-fields rule). */
@@ -15,10 +28,10 @@ export async function hashWorkspace(workspace: string): Promise<string> {
 }
 
 /** v1.0 resolver — static map from the WORKSPACE_MAP_JSON secret. */
-export function resolveWorkspace(workspace: string, env: Env): WorkspaceResolution | null {
-  let map: Record<string, WorkspaceResolution>;
+export function resolveWorkspace(workspace: string, env: Env): StaticWorkspaceEntry | null {
+  let map: Record<string, StaticWorkspaceEntry>;
   try {
-    map = JSON.parse(env.WORKSPACE_MAP_JSON) as Record<string, WorkspaceResolution>;
+    map = JSON.parse(env.WORKSPACE_MAP_JSON) as Record<string, StaticWorkspaceEntry>;
   } catch {
     // A malformed secret is an operator misconfiguration, not a caller error.
     throw new Error('WORKSPACE_MAP_JSON is not valid JSON');
@@ -27,9 +40,10 @@ export function resolveWorkspace(workspace: string, env: Env): WorkspaceResoluti
 }
 
 /**
- * Resolve the workspace named in the request and verify the path-secret
- * (constant-time). Throws NotFoundError for an unknown workspace, UnauthorizedError
- * for a bad/missing secret. Both are deliberately indistinguishable in timing.
+ * v1.0 dispatch: resolve the workspace named in the request and verify the
+ * path-secret (constant-time). Throws NotFoundError for an unknown workspace,
+ * UnauthorizedError for a bad/missing secret. Both are deliberately
+ * indistinguishable in timing.
  */
 export async function dispatchWorkspace(
   workspace: string,
@@ -37,19 +51,52 @@ export async function dispatchWorkspace(
   env: Env,
   trace_id: string,
 ): Promise<WorkspaceContext> {
-  const resolution = resolveWorkspace(workspace, env);
-  if (!resolution) {
+  const entry = resolveWorkspace(workspace, env);
+  if (!entry) {
     // Burn a comparison so unknown-workspace and bad-secret cost the same.
     constantTimeEquals(pathSecret ?? '', 'x');
     throw new NotFoundError(`workspace ${workspace}`);
   }
-  if (!pathSecret || !constantTimeEquals(pathSecret, resolution.path_secret)) {
+  if (!pathSecret || !constantTimeEquals(pathSecret, entry.path_secret)) {
     throw new UnauthorizedError('invalid workspace path-secret');
   }
   return {
     workspace,
     workspace_hash: await hashWorkspace(workspace),
-    resolution,
+    resolution: {
+      owner: entry.owner,
+      repo: entry.repo,
+      credential: { kind: 'pat', token: entry.token },
+      ...(entry.branch ? { branch: entry.branch } : {}),
+    },
+    trace_id,
+  };
+}
+
+/**
+ * v1.1 dispatch (managed-spec §2.2): entitlement record → WorkspaceContext.
+ * Unknown workspace → 404; known but not entitled → 403 entitlement-inactive.
+ * No secret comparison happens on this path — the caller was already
+ * authenticated (Bearer, task 4(c)) — so there is no timing side to hide.
+ */
+export async function dispatchManagedWorkspace(
+  workspace: string,
+  store: EntitlementStore,
+  trace_id: string,
+  now: Date = new Date(),
+): Promise<WorkspaceContext> {
+  const record = await store.get(workspace);
+  if (!record) throw new NotFoundError(`workspace ${workspace}`);
+  if (!isEntitled(record, now)) throw new EntitlementInactiveError(workspace);
+  return {
+    workspace,
+    workspace_hash: await hashWorkspace(workspace),
+    resolution: {
+      owner: record.github.owner,
+      repo: record.github.repo,
+      credential: { kind: 'app', installation_id: record.github.installation_id },
+      ...(record.github.branch ? { branch: record.github.branch } : {}),
+    },
     trace_id,
   };
 }

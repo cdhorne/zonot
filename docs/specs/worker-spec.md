@@ -62,6 +62,7 @@ https://zonot.app/problems/idempotency-replay      422   core IdempotencyReplayE
 https://zonot.app/problems/uninitialized           409   core WorkspaceNotInitializedError
 https://zonot.app/problems/not-found               404   note id / workspace not resolvable
 https://zonot.app/problems/unauthorized            401   path-secret invalid (v1.0); OAuth token expired (v1.1)
+https://zonot.app/problems/entitlement-inactive    403   worker EntitlementInactiveError (v1.1; managed-spec §2.2)
 https://zonot.app/problems/rate-limited            429   per-tenant rate limit hit; Retry-After + retryable: true
 https://zonot.app/problems/upstream-rate-limited   429   GitHub quota; Retry-After echoed; retryable: true
 https://zonot.app/problems/upstream-down           502   GitHub 5xx; retryable: true

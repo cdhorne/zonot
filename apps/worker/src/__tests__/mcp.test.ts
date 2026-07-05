@@ -10,7 +10,11 @@ import { buildServer } from '../mcp.ts';
 const ctx: WorkspaceContext = {
   workspace: 'personal',
   workspace_hash: 'sha256:test',
-  resolution: { owner: 'cdhorne', repo: 'zonot-notes', token: 'ghp_x', path_secret: 's' },
+  resolution: {
+    owner: 'cdhorne',
+    repo: 'zonot-notes',
+    credential: { kind: 'pat', token: 'ghp_x' },
+  },
   trace_id: '01HZZZA1B2C3D4E5F6G7H8J9K0',
 };
 const env: Env = { WORKSPACE_MAP_JSON: '{}' };

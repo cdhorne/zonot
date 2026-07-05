@@ -4,6 +4,7 @@
 // here per request in managed (v1.1) deployments. v1.0 / self-host never
 // consults it — the static-map resolver stays the default (managed-spec §3.1).
 
+import type { KVNamespace } from '@cloudflare/workers-types';
 import { z } from 'zod';
 
 // ISO-8601 UTC with mandatory 'Z' suffix — same discipline as the convention
@@ -55,13 +56,78 @@ export function isEntitled(record: EntitlementRecord, now: Date): boolean {
   return now.getTime() < Math.max(validUntil, graceUntil);
 }
 
+/** Known workspace, entitlement lapsed/revoked → 403 entitlement-inactive
+ *  (managed-spec §2.2). Worker-local: entitlement is operator-side state, so
+ *  its error is not a core concern (ADR-0031). */
+export class EntitlementInactiveError extends Error {
+  override readonly name = 'EntitlementInactiveError';
+  constructor(public readonly workspace: string) {
+    super(`workspace ${workspace} has no active entitlement`);
+  }
+}
+
 /**
- * Read side of the entitlement store (managed-spec §2.2). The v1.1 KV-backed
- * implementation (60s stale-while-revalidate over `entitlement:<workspace>`)
- * lands with task 4(a); this interface is the seam the workspace resolver
- * swaps onto. Returns null for unknown workspaces (→ 404, same timing
- * discipline as the v1.0 dispatch).
+ * Read side of the entitlement store (managed-spec §2.2). Returns null for
+ * unknown workspaces (→ 404). The workspace resolver
+ * (`dispatchManagedWorkspace`) is the only consumer.
  */
 export interface EntitlementStore {
   get(workspace: string): Promise<EntitlementRecord | null>;
+}
+
+const SWR_TTL_MS = 60_000;
+
+interface CacheSlot {
+  record: EntitlementRecord | null; // null = cached miss (unknown workspaces don't hammer KV)
+  fetchedAt: number;
+  refresh?: Promise<void>; // in-flight revalidation, deduped across requests
+}
+
+/**
+ * KV-backed store over `entitlement:<workspace>` with a 60s per-isolate
+ * stale-while-revalidate cache (worker-spec §4.1): fresh entries are served
+ * from memory; stale entries are served immediately while one background
+ * refresh runs; a failed refresh keeps serving stale (stale-while-error).
+ * Only a cache miss blocks on KV.
+ */
+export function kvEntitlementStore(
+  kv: KVNamespace,
+  now: () => number = Date.now,
+): EntitlementStore {
+  const cache = new Map<string, CacheSlot>();
+
+  async function fetchRecord(workspace: string): Promise<EntitlementRecord | null> {
+    const raw = await kv.get(`entitlement:${workspace}`, { type: 'json' });
+    if (raw === null) return null;
+    const parsed = entitlementRecordSchema.safeParse(raw);
+    if (!parsed.success) {
+      // A malformed record is a control-plane writer bug, not a caller error.
+      throw new Error(`entitlement record for workspace is malformed: ${parsed.error.message}`);
+    }
+    return parsed.data;
+  }
+
+  return {
+    async get(workspace) {
+      const slot = cache.get(workspace);
+      if (slot && now() - slot.fetchedAt < SWR_TTL_MS) return slot.record;
+
+      if (slot) {
+        // Stale: serve it, revalidate once in the background.
+        slot.refresh ??= (async () => {
+          try {
+            const record = await fetchRecord(workspace);
+            cache.set(workspace, { record, fetchedAt: now() });
+          } catch {
+            delete slot.refresh; // keep stale; next stale hit retries
+          }
+        })();
+        return slot.record;
+      }
+
+      const record = await fetchRecord(workspace);
+      cache.set(workspace, { record, fetchedAt: now() });
+      return record;
+    },
+  };
 }

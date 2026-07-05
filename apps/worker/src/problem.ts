@@ -30,6 +30,11 @@ const TAXONOMY: Record<string, { status: number; slug: string; title: string }> 
   NotFoundError: { status: 404, slug: 'not-found', title: 'Not found' },
   NoteFileParseError: { status: 500, slug: 'internal', title: 'Internal error' },
   UnauthorizedError: { status: 401, slug: 'unauthorized', title: 'Unauthorized' },
+  EntitlementInactiveError: {
+    status: 403,
+    slug: 'entitlement-inactive',
+    title: 'Entitlement inactive',
+  },
   RateLimitedError: { status: 429, slug: 'rate-limited', title: 'Rate limited' },
   UpstreamRateLimitedError: {
     status: 429,
