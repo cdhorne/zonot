@@ -17,6 +17,9 @@ export interface Env {
   WORKSPACE_MAP_JSON: string;
   /** Idempotency cache (24h TTL). Absent in dev → idempotency is a no-op. */
   IDEMPOTENCY?: import('@cloudflare/workers-types').KVNamespace;
+  /** Entitlement store, managed (v1.1) deployments only (managed-spec §2).
+   *  Absent in v1.0 / self-host → the static-map resolver is authoritative. */
+  ENTITLEMENT?: import('@cloudflare/workers-types').KVNamespace;
   /** Rate-limit binding (absent in local dev). */
   RATE_LIMITER?: RateLimiter;
   /** Metrics binding (absent in local dev). */

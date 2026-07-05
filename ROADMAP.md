@@ -131,6 +131,8 @@ consciously accepted to have a paid product that covers costs (ADR-0017/0020/002
 Built on the same core + edge; architected for from day one (multi-tenant + the Tier-2 seam).
 
 ### v1.1 — Managed C1 (the first paid tier)
+- **Implementation contract:** [`docs/specs/managed-spec.md`](docs/specs/managed-spec.md) —
+  open/closed split, entitlement store, auth, custody, onboarding, billing, Phase 4 task breakdown.
 - **Build:** multi-tenant managed custody — OAuth 2.1 + CIMD, the GitHub App (Contents:rw +
   Metadata:r, one repo), per-request short-lived token minting, onboarding (OAuth + one-click install
   on an auto-created repo), billing (ADR-0017). BYO-model (Tier 1) — no operator inference yet.
