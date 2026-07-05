@@ -5,7 +5,12 @@
 // between them is task 4(c) (managed-spec §3.1).
 
 import { NotFoundError, UnauthorizedError } from '@zonot/core/errors';
-import { EntitlementInactiveError, type EntitlementStore, isEntitled } from './entitlement.ts';
+import {
+  EntitlementInactiveError,
+  type EntitlementStore,
+  isEntitled,
+  type WaitUntil,
+} from './entitlement.ts';
 import type { Env, WorkspaceContext } from './env.ts';
 
 /** One entry in the WORKSPACE_MAP_JSON secret (v1.0 operator config). */
@@ -74,20 +79,24 @@ export async function dispatchWorkspace(
 }
 
 /**
- * v1.1 dispatch (managed-spec §2.2): entitlement record → WorkspaceContext.
- * Unknown workspace → 404; known but not entitled → 403 entitlement-inactive.
- * No secret comparison happens on this path — the caller was already
- * authenticated (Bearer, task 4(c)) — so there is no timing side to hide.
+ * v1.1 dispatch (managed-spec §2.2): the authenticated account's entitlement
+ * record → WorkspaceContext. The account id scopes the lookup, so a tenant can
+ * never resolve another account's workspace (ADR-0037 §Bright lines) — an
+ * unknown pair is a plain 404, indistinguishable from a workspace that doesn't
+ * exist. Known but not entitled → 403 entitlement-inactive. No secret
+ * comparison happens here (the caller was already authenticated — 4(c)), so
+ * there is no constant-time obligation on this path.
  */
 export async function dispatchManagedWorkspace(
+  accountId: string,
   workspace: string,
   store: EntitlementStore,
   trace_id: string,
-  now: Date = new Date(),
+  opts: { now?: Date; waitUntil?: WaitUntil } = {},
 ): Promise<WorkspaceContext> {
-  const record = await store.get(workspace);
+  const record = await store.get(accountId, workspace, opts.waitUntil);
   if (!record) throw new NotFoundError(`workspace ${workspace}`);
-  if (!isEntitled(record, now)) throw new EntitlementInactiveError(workspace);
+  if (!isEntitled(record, opts.now ?? new Date())) throw new EntitlementInactiveError(workspace);
   return {
     workspace,
     workspace_hash: await hashWorkspace(workspace),

@@ -76,7 +76,10 @@ derivable, disposable state — losing it costs convenience, never data.
 ### 2.1 Record shape
 
 ```jsonc
-// KV key: entitlement:<workspace>   (the Worker's per-request read path)
+// KV key: entitlement:<account_id>:<workspace>   (the Worker's per-request read path)
+// The account id is part of the key, so a lookup can only ever land inside the
+// authenticated account (ADR-0033 "keyed to the Zonot account"; ADR-0037 bright
+// line) — and workspace names need be unique only per account, never globally.
 // Written by billing adapters (closed); read by the Worker (open interface).
 {
   "v": 1,
@@ -101,15 +104,18 @@ derivable, disposable state — losing it costs convenience, never data.
 - `active` flips false only at **final expiry** (after grace) or **refund effective time**
   (ADR-0033 §Lifecycle). The Worker treats `active && now < max(valid_until, grace_until)` as
   entitled; the *writer* owns lifecycle transitions, the reader stays dumb.
-- A second index `account:<account_id>` → workspace list lives control-plane-side only; the
-  Worker never needs it.
+- The control plane keeps its own account → workspaces listing; the Worker never needs one.
 
 ### 2.2 Read path (open Worker)
 
-- KV read `entitlement:<workspace>`, cached 60s stale-while-revalidate (worker-spec §4.1).
-- Resolution failure modes map to the existing taxonomy: unknown workspace → 404, inactive
-  entitlement → 403 `problems/entitlement-inactive` (RFC 9457), bad token → 401. Timing
-  discipline matches the v1.0 dispatch (constant-time, indistinguishable unknown/bad).
+- KV read `entitlement:<account_id>:<workspace>`, cached 60s stale-while-revalidate in a
+  **bounded per-isolate map** (worker-spec §4.1/§3.3); background revalidation must be
+  registered via `waitUntil` so workerd lets it settle after the response.
+- Resolution failure modes map to the existing taxonomy: unknown account/workspace pair → 404
+  (one account can never learn whether another's workspace exists), inactive entitlement → 403
+  `problems/entitlement-inactive` (RFC 9457), bad token → 401. No secret comparison happens on
+  this path — the caller is already authenticated (§3) — so the v1.0 constant-time obligation
+  doesn't apply.
 - **Never cache the GitHub installation token in KV** — minted per request (§4), held in memory
   for the request lifetime only.
 
@@ -167,9 +173,9 @@ closed (§1.2).
   lifetime is the sanctioned optimization.
 - The **App private key is the sole durable operator secret** (ADR-0037 §Bright lines). Rotation:
   annual or on compromise, new key via GitHub UI, deploy, 24h overlap window.
-- The v1.0 `WorkspaceResolution.token` (static PAT) becomes one `TokenProvider` implementation;
-  App minting is the second. Interface in the open Worker; the managed deployment selects by
-  auth mode.
+- Credentials are a discriminated union on `WorkspaceResolution` (`pat` static token | `app`
+  installation id); `getGitHubToken` resolves either, so handlers never see which mode minted
+  their token. Both live in the open Worker; the dispatch path picks the credential kind.
 
 ## 5. Onboarding (closed, control plane)
 
@@ -186,7 +192,8 @@ config written.** Steps, each idempotent and individually resumable:
    convention version, vocab) through the App token.
 5. **Entitlement write** (trial or post-purchase state per the billing flow) + per-user config.
 
-**Partial-failure recovery (closes ADR-0017 §Open):** the onboarding record carries a step
+**Partial-failure recovery (the design for ADR-0017's open item; the ADR revs when 4(d)
+ships):** the onboarding record carries a step
 cursor; every step is safe to re-run (create-if-absent, install-if-absent, init is already
 idempotent). Resume = re-enter the flow, fast-forward completed steps. Abandonment leaves no
 operator-side custody: an installed-but-never-entitled App is inert and uninstallable by the
@@ -201,20 +208,19 @@ Per ADR-0033, IAP-first; the web/CLI rail is deferred and additive.
 - **Server:** reuse **Fathom's RevenueCat-replacement backend** for receipt validation + store
   server notifications (ASSNv2 / RTDN). Its output is exactly one thing: entitlement-store
   writes (§2.3). The rest of the system never sees the payment source.
-- **Lifecycle:** store-native grace (~16d) honored via `grace_until`; refund revokes at the
-  refund's effective time; chargebacks flag operationally (ADR-0033 §Lifecycle).
-- **Guardrails:** billing data never touches the user's repo; capture never blocks on billing
-  state *within* an active entitlement (the v1.2 cap degrades enrichment, never capture).
+- **Lifecycle + guardrails:** per ADR-0033 §Lifecycle/§Guardrail, verbatim. The rail-specific
+  delta: grace and refund signals arrive *only* via ASSNv2/RTDN — no polling, no cron
+  reconciliation in v1.1.
 
 ## 7. v1.0 → v1.1 transition — implementation notes
 
 Extends worker-spec §3.4. Concrete swap points, all existing:
 
-| Swap | v1.0 (exists) | v1.1 | Where |
+| Swap | v1.0 | v1.1 (landed with 4(a)/4(b)) | Where |
 |---|---|---|---|
-| Workspace resolution | `resolveWorkspace` (static map) | entitlement-backed resolver | `apps/worker/src/workspace.ts` (the documented swap point) |
-| GitHub auth | `WorkspaceResolution.token` PAT | `TokenProvider` → App-minted token | `apps/worker/src/github-token.ts` (seam, 4(a)) |
-| Request auth | path-secret dispatch | Bearer validation → account → entitlement | auth-mode switch (§3.1) |
+| Workspace resolution | `dispatchWorkspace` (static map + path-secret) | `dispatchManagedWorkspace` (account-scoped entitlement) | `apps/worker/src/workspace.ts` |
+| GitHub auth | `pat` credential (static PAT) | `app` credential → per-request minted token | `GitHubCredential` union; `getGitHubToken` in `apps/worker/src/github-token.ts` |
+| Request auth | path-secret dispatch | Bearer validation → account → entitlement | auth-mode switch (§3.1, task 4(c)) |
 | Rate limit key | workspace | per-tier from entitlement | `ratelimit.ts` (key derivation only) |
 | Logging | `wrangler tail` | + Logpush→R2, 7-day retention | closed deploy config |
 | Sentry | dev DSN | prod DSN, same wiring | closed deploy config |

@@ -29,4 +29,5 @@ Per-token capability bounded to one repo for <=1h. Population breadth: the App k
 
 ## Open
 
-App-sync default (lean C0); onboarding partial-failure recovery; directory submission.
+App-sync default (lean C0); onboarding partial-failure recovery (design pinned in
+[managed-spec §5](../specs/managed-spec.md); closes when v1.1 4(d) ships); directory submission.

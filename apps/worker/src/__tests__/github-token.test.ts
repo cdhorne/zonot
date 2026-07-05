@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { UpstreamDownError } from '@zonot/core/errors';
+import { UpstreamDownError, UpstreamRateLimitedError } from '@zonot/core/errors';
 import type { Env, WorkspaceContext } from '../env.ts';
 import { getGitHubToken, githubAppConfig, mintInstallationToken } from '../github-token.ts';
 
@@ -176,6 +176,29 @@ describe('mintInstallationToken', () => {
     expect(jwts.length).toBe(1);
   });
 
+  test('GitHub 429 → UpstreamRateLimitedError with Retry-After', async () => {
+    stubTokenEndpoint(
+      () =>
+        new Response(JSON.stringify({ message: 'slow down' }), {
+          status: 429,
+          headers: { 'retry-after': '30' },
+        }),
+    );
+    const attempt = mintInstallationToken(
+      { appId: '12345', privateKeys: [keyA.pem] },
+      87654321,
+      'https://gh.test',
+    );
+    await expect(attempt).rejects.toBeInstanceOf(UpstreamRateLimitedError);
+    await expect(attempt).rejects.toMatchObject({ retryAfterSeconds: 30 });
+  });
+
+  test('no keys configured → clear operator error', async () => {
+    await expect(
+      mintInstallationToken({ appId: '12345', privateKeys: [] }, 87654321, 'https://gh.test'),
+    ).rejects.toThrow(/no GitHub App private keys/);
+  });
+
   test('GitHub 5xx → UpstreamDownError (retryable surface)', async () => {
     stubTokenEndpoint(() => Response.json({ message: 'down' }, { status: 503 }));
     await expect(
@@ -187,19 +210,17 @@ describe('mintInstallationToken', () => {
     ).rejects.toBeInstanceOf(UpstreamDownError);
   });
 
-  test('PKCS#1 key → clear conversion guidance, before any network call', async () => {
+  test('PKCS#1 and encrypted keys → clear guidance, before any network call', async () => {
     globalThis.fetch = (() => {
       throw new Error('unexpected network call');
     }) as unknown as typeof fetch;
+    const mint = (pem: string) =>
+      mintInstallationToken({ appId: '12345', privateKeys: [pem] }, 87654321, 'https://gh.test');
     await expect(
-      mintInstallationToken(
-        {
-          appId: '12345',
-          privateKeys: ['-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----'],
-        },
-        87654321,
-        'https://gh.test',
-      ),
+      mint('-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----'),
     ).rejects.toThrow(/openssl pkcs8/);
+    await expect(
+      mint('-----BEGIN ENCRYPTED PRIVATE KEY-----\nabc\n-----END ENCRYPTED PRIVATE KEY-----'),
+    ).rejects.toThrow(/passphrase-encrypted/);
   });
 });

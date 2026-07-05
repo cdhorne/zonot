@@ -98,6 +98,7 @@ IdempotencyReplayError    → idempotency-replay
 WorkspaceNotInitializedError → uninitialized
 NotFoundError             → not-found
 UnauthorizedError         → unauthorized
+EntitlementInactiveError  → entitlement-inactive   (worker-local; v1.1)
 RateLimitedError          → rate-limited
 UpstreamRateLimitedError  → upstream-rate-limited
 UpstreamDownError         → upstream-down
@@ -237,14 +238,12 @@ async function resolveWorkspace(ws: string, env: Env): Promise<WorkspaceResoluti
   return map.get(ws) ?? null;
 }
 
-// v1.1 implementation (same signature)
-async function resolveWorkspace(ws: string, env: Env): Promise<WorkspaceResolution | null> {
-  const entitlement = await env.ENTITLEMENT_KV.get(`workspace:${ws}`, { type: 'json' });
-  if (!entitlement || !entitlement.c1_active) return null;
-  const token = await mintGithubAppToken(entitlement.installation_id, entitlement.repo);
-  return { repo: entitlement.repo, token };
-}
 ```
+
+The v1.1 dispatcher is specified in managed-spec §2 (an earlier sketch here is superseded):
+`dispatchManagedWorkspace` resolves `entitlement:<account_id>:<workspace>` for the
+*authenticated* account and yields the same `WorkspaceContext`; token minting happens at
+backend construction, not in the resolver (managed-spec §4/§7).
 
 No call site changes; backend swap is the difference.
 
@@ -267,12 +266,16 @@ if (!decision.success) throw new RateLimitedError(decision.retryAfter);
 Keys are always `(workspace_hash, op)` — never `(workspace_hash)` alone, so a noisy read doesn't
 starve a write.
 
-### 3.3 No shared mutable state
+### 3.3 No shared mutable state — except bounded SWR caches
 
-The Worker has no module-level mutable state across requests. Each request resolves its
-WorkspaceContext and operates within it. Static data (the workspace map at v1.0; KV reads with
-short TTL) is cached via `caches.default` per-request, not held in module memory across
-requests.
+The Worker has no module-level mutable state across requests, with one carve-out: **bounded,
+disposable per-isolate SWR caches** (the 60s entitlement cache, managed-spec §2.2; the
+sanctioned installation-token memo, managed-spec §4). A cache in this carve-out must be
+size-capped, derivable-from-KV/upstream, and safe to lose at any isolate recycle; any
+background revalidation it spawns must be registered via `waitUntil`, since workerd may never
+settle a promise that outlives its request. Everything else follows the rule: each request
+resolves its WorkspaceContext and operates within it; other static data (the workspace map at
+v1.0) is cached via `caches.default` per-request, not held in module memory.
 
 This rule is enforced by a lint check (`no-restricted-syntax: ModuleVariableDeclaration` for
 `let`/`var` at module scope in `apps/worker/src`) to prevent regression.
@@ -297,7 +300,7 @@ Every row is a config / backend swap; no architecture change.
 | Data | Where | TTL | Stale-while-revalidate? |
 |------|-------|-----|------------------------|
 | Workspace map (v1.0) | secret, parsed on each cold start | request-lifetime cache | no |
-| Entitlement (v1.1) | KV `entitlement:<ws>` | 60s | yes |
+| Entitlement (v1.1) | KV `entitlement:<account>:<ws>` | 60s | yes |
 | Tag vocab | KV `vocab:<ws>` | 5 min | yes (vocab drift is safe) |
 | GitHub repo SHA (current HEAD) | not cached | — | never (authority-or-bust) |
 | Note SHA for SHA-conditional ops | not cached | — | never (authority-or-bust) |

@@ -5,7 +5,7 @@
 // access_tokens (≤1h). The token lives for the request only: never KV,
 // never logs (ADR-0037).
 
-import { UpstreamDownError } from '@zonot/core/errors';
+import { UpstreamDownError, UpstreamRateLimitedError } from '@zonot/core/errors';
 import type { Env, WorkspaceContext } from './env.ts';
 
 const GITHUB_API = 'https://api.github.com';
@@ -57,7 +57,9 @@ export async function mintInstallationToken(
   installationId: number,
   githubApiBase: string = GITHUB_API,
 ): Promise<string> {
+  if (app.privateKeys.length === 0) throw new Error('no GitHub App private keys configured');
   let lastStatus = 0;
+  let retryAfter: string | null = null;
   for (const key of app.privateKeys) {
     const jwt = await signAppJwt(app.appId, key);
     const res = await fetch(`${githubApiBase}/app/installations/${installationId}/access_tokens`, {
@@ -72,8 +74,13 @@ export async function mintInstallationToken(
       const body = (await res.json()) as { token: string };
       return body.token;
     }
+    await res.body?.cancel(); // unread bodies pin the connection in workerd
     lastStatus = res.status;
+    retryAfter = res.headers.get('retry-after');
     if (res.status !== 401) break;
+  }
+  if (lastStatus === 429) {
+    throw new UpstreamRateLimitedError(Number(retryAfter) || 60);
   }
   if (lastStatus >= 500) {
     throw new UpstreamDownError(`GitHub App token endpoint returned ${lastStatus}`);
@@ -106,6 +113,9 @@ async function importPkcs8Key(pem: string): Promise<CryptoKey> {
     throw new Error(
       'GITHUB_APP_PRIVATE_KEY is PKCS#1; convert with `openssl pkcs8 -topk8 -nocrypt`',
     );
+  }
+  if (pem.includes('ENCRYPTED PRIVATE KEY')) {
+    throw new Error('GITHUB_APP_PRIVATE_KEY is passphrase-encrypted; store it decrypted');
   }
   const der = Uint8Array.from(
     atob(pem.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, '').replace(/\s/g, '')),
