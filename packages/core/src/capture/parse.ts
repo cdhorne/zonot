@@ -20,9 +20,12 @@ const SIGILS: Record<string, { kind: ChipKind; sigil: '#' | '@' | '!' }> = {
 // Reserved type values that are valid on a source node but rejected in a capture.
 const RESERVED_TYPES = new Set(['context']);
 
-// A facet token: a sigil then a letter/number-led slug. The slug class excludes
-// the spec's terminators (whitespace, `)`, `.`, `,`, `;`) so they end the token.
-const TOKEN = /([#@!])([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu;
+// A facet token: a sigil then a slug. `#tag` requires an alphabetic start so bare
+// numeric refs (`#39`, a GitHub issue link in prose) stay body text, not a tag
+// (issue #10); `@thread`/`!type` keep the letter/number-led slug. The slug class
+// excludes the spec's terminators (whitespace, `)`, `.`, `,`, `;`) so they end the
+// token.
+const TOKEN = /(#)([\p{L}][\p{L}\p{N}_-]*)|([@!])([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu;
 const TITLE_MAX = 80;
 
 export function parseCapture(body: string): ParsedCapture {
@@ -42,9 +45,11 @@ export function parseCapture(body: string): ParsedCapture {
     if (prev !== undefined && !/\s/.test(prev) && prev !== '(') continue;
     if (inRange(start, fenced)) continue;
 
-    const entry = SIGILS[m[1] as string];
+    const sigil = (m[1] ?? m[3]) as string;
+    const raw = (m[2] ?? m[4]) as string;
+    const entry = SIGILS[sigil];
     if (!entry) continue;
-    const value = normalizeTags([m[2] as string])[0];
+    const value = normalizeTags([raw])[0];
     if (!value) continue;
     const range: [number, number] = [start, start + m[0].length];
 
