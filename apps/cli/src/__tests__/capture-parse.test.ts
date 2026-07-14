@@ -2,11 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { parseInline } from '../capture-parse.ts';
 
 describe('parseInline', () => {
-  test('extracts + normalizes #tags, first @thread, first !type', () => {
+  test('extracts + normalizes #tags, last @thread, first !type', () => {
     const f = parseInline('Ship it #Design #design @Launch-Q3 !task and @ignored !ignored');
     expect(f.tags).toEqual(['design']); // deduped + lowercased
-    expect(f.thread).toBe('launch-q3');
-    expect(f.type).toBe('task');
+    expect(f.thread).toBe('ignored'); // last @thread wins
+    expect(f.type).toBe('task'); // first !type wins
   });
 
   test('no facets → empty tags, undefined thread/type', () => {
