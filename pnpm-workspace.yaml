@@ -1,6 +1,15 @@
 packages:
   - packages/*
   - apps/*
+overrides:
+  # Force undici past the high-sev advisories (GHSA-vmh5-mc38-953g TLS bypass +
+  # WebSocket DoS) pulled in transitively via wrangler > miniflare. Patched in
+  # 7.28.0; the current tree resolved 7.24.8. Drop when wrangler ships it itself.
+  undici: '^7.28.0'
+  # ws memory-exhaustion DoS (GHSA-96hv-2xvq-fx4p), high, via expo > @expo/cli.
+  # Scoped to the vulnerable 8.x range only (patched 8.21.0) so ws@7.5.11 — used
+  # elsewhere and unaffected — is left untouched. Drop when expo ships it itself.
+  'ws@>=8.0.0 <8.21.0': '^8.21.0'
 allowBuilds:
   esbuild: true
   lefthook: true
