@@ -61,9 +61,44 @@ function requireId(args: ParsedArgs, index: number, label = 'id'): string {
   return id;
 }
 
+// Recognized everywhere, so per-command allowlists below only list their own flags.
+const GLOBAL_FLAGS = new Set([
+  'workspace',
+  'json',
+  'quiet',
+  'no-color',
+  'verbose',
+  'help',
+  'version',
+]);
+
+/**
+ * Reject a flag no handler reads or a positional no handler consumes. Without
+ * this, `--title "some title"` (space form; this parser only supports
+ * `--title=…`) silently becomes a boolean `title` flag plus a dropped
+ * positional, with no error to explain why the title never landed.
+ */
+function assertKnownArgs(
+  args: ParsedArgs,
+  command: string,
+  known: ReadonlySet<string>,
+  maxPositionals: number,
+): void {
+  for (const key of Object.keys(args.flags)) {
+    if (GLOBAL_FLAGS.has(key) || known.has(key)) continue;
+    throw new ConfigError(`zonot ${command}: unknown flag --${key}`);
+  }
+  if (args.positionals.length > maxPositionals) {
+    throw new ConfigError(
+      `zonot ${command}: unexpected argument "${args.positionals[maxPositionals]}"`,
+    );
+  }
+}
+
 // --- init ------------------------------------------------------------------
 
 export async function cmdInit(args: ParsedArgs): Promise<number> {
+  assertKnownArgs(args, 'init', new Set(['repo', 'worker']), 0);
   const name = flagStr(args.flags, 'workspace') ?? 'personal';
   if (flagStr(args.flags, 'worker')) {
     throw new ConfigError('worker thin-client mode is not wired yet (Phase 2a is local-only)');
@@ -92,6 +127,7 @@ export async function cmdInit(args: ParsedArgs): Promise<number> {
 // --- capture ---------------------------------------------------------------
 
 export async function cmdCapture(args: ParsedArgs): Promise<number> {
+  assertKnownArgs(args, 'capture', new Set(['title', 'tags', 'thread', 'type']), 1);
   const ctx = resolve(args);
   const body = (await resolveBody(args, 0)) ?? '';
   const inline = parseInline(body);
@@ -122,6 +158,7 @@ export async function cmdCapture(args: ParsedArgs): Promise<number> {
 // --- correction surface ----------------------------------------------------
 
 export async function cmdAppend(args: ParsedArgs): Promise<number> {
+  assertKnownArgs(args, 'append', new Set(), 2);
   const ctx = resolve(args);
   const id = requireId(args, 0);
   const block = await resolveBody(args, 1);
@@ -137,6 +174,7 @@ export async function cmdAppend(args: ParsedArgs): Promise<number> {
 }
 
 export async function cmdCorrect(args: ParsedArgs): Promise<number> {
+  assertKnownArgs(args, 'correct', new Set(['title']), 2);
   const ctx = resolve(args);
   const id = requireId(args, 0);
   const body = await resolveBody(args, 1);
@@ -155,6 +193,7 @@ export async function cmdCorrect(args: ParsedArgs): Promise<number> {
 }
 
 export async function cmdUndo(args: ParsedArgs): Promise<number> {
+  assertKnownArgs(args, 'undo', new Set(), 1);
   const ctx = resolve(args);
   emitWrite(
     args,
@@ -165,6 +204,7 @@ export async function cmdUndo(args: ParsedArgs): Promise<number> {
 }
 
 export async function cmdDelete(args: ParsedArgs): Promise<number> {
+  assertKnownArgs(args, 'delete', new Set(), 1);
   const ctx = resolve(args);
   emitWrite(
     args,
@@ -177,6 +217,7 @@ export async function cmdDelete(args: ParsedArgs): Promise<number> {
 // --- read ------------------------------------------------------------------
 
 export async function cmdRead(args: ParsedArgs): Promise<number> {
+  assertKnownArgs(args, 'read', new Set(['raw', 'include-source']), 1);
   const ctx = resolve(args);
   const note = await ctx.backend.readNote({
     workspace: ctx.name,
@@ -209,6 +250,7 @@ async function withIndex<T>(
 }
 
 export async function cmdSearch(args: ParsedArgs): Promise<number> {
+  assertKnownArgs(args, 'search', new Set(['limit']), 1);
   const q = args.positionals[0];
   if (!q) throw new ConfigError('missing search query');
   const page = await withIndex(args, (index, workspace) =>
@@ -219,6 +261,7 @@ export async function cmdSearch(args: ParsedArgs): Promise<number> {
 }
 
 export async function cmdList(args: ParsedArgs): Promise<number> {
+  assertKnownArgs(args, 'list', new Set(['group', 'since', 'limit']), 0);
   const group = flagStr(args.flags, 'group') as ListGroupBy | undefined;
   const since = flagStr(args.flags, 'since');
   await withIndex(args, (index, workspace) => {
@@ -242,6 +285,7 @@ export async function cmdList(args: ParsedArgs): Promise<number> {
 }
 
 export async function cmdTags(args: ParsedArgs): Promise<number> {
+  assertKnownArgs(args, 'tags', new Set(['prefix']), 0);
   const prefix = flagStr(args.flags, 'prefix');
   const tags = await withIndex(args, (index, workspace) =>
     index.engine.listTags({ workspace, ...(prefix ? { prefix } : {}) }),
@@ -269,6 +313,7 @@ function renderSummary(args: ParsedArgs, r: NoteSummary): string {
 // --- import ----------------------------------------------------------------
 
 export async function cmdImport(args: ParsedArgs): Promise<number> {
+  assertKnownArgs(args, 'import', new Set(['from', 'dry-run', 'batch']), 1);
   const path = args.positionals[0];
   if (!path) throw new ConfigError('missing import path');
   const { name, ws } = resolveWorkspace(loadConfig(), flagStr(args.flags, 'workspace'));
@@ -320,6 +365,7 @@ export async function cmdImport(args: ParsedArgs): Promise<number> {
 // --- introspection ---------------------------------------------------------
 
 export function cmdStatus(args: ParsedArgs): number {
+  assertKnownArgs(args, 'status', new Set(), 0);
   const { name, ws } = resolveWorkspace(loadConfig(), flagStr(args.flags, 'workspace'));
   const initialized = ws.mirror_path ? existsSync(`${ws.mirror_path}/.git`) : false;
   const s = makeStyle(args);
@@ -333,6 +379,7 @@ export function cmdStatus(args: ParsedArgs): number {
 }
 
 export function cmdWorkspaces(args: ParsedArgs): number {
+  assertKnownArgs(args, 'workspaces', new Set(), 0);
   const config = loadConfig();
   const s = makeStyle(args);
   const rows = Object.entries(config.workspaces).map(([name, ws]) => ({

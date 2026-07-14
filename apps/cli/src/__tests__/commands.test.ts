@@ -151,6 +151,44 @@ describe('command loop (init → capture → read → append → correct → und
   });
 });
 
+describe('argument validation (a bad flag must error, never drop data)', () => {
+  test('--title=X (the only supported form) lands title in frontmatter', async () => {
+    await run(() => cmdInit(parseArgs(['init'])));
+    const cap = await run<{ id: string }>(() =>
+      cmdCapture(parseArgs(['capture', 'body', '--title=Real Title'])),
+    );
+    const note = await run<{ frontmatter: { title?: string } }>(() =>
+      cmdRead(parseArgs(['read', cap.json.id])),
+    );
+    expect(note.json.frontmatter.title).toBe('Real Title');
+  });
+
+  test('--title "value" (space form) is rejected instead of silently dropping the title', async () => {
+    await run(() => cmdInit(parseArgs(['init'])));
+    // parseArgs has no way to know `--title` takes a value, so the unquoted
+    // form parses as a boolean `title` flag plus a stray "Space Title"
+    // positional — the shape that would otherwise silently eat the title.
+    await expect(
+      run(() => cmdCapture(parseArgs(['capture', 'body', '--title', 'Space Title']))),
+    ).rejects.toThrow(/unexpected argument/);
+  });
+
+  test('an unrecognized flag errors instead of being silently ignored', async () => {
+    await run(() => cmdInit(parseArgs(['init'])));
+    await expect(
+      run(() => cmdCapture(parseArgs(['capture', 'body', '--titel=Typo']))),
+    ).rejects.toThrow(/unknown flag/);
+  });
+
+  test('an extra positional beyond what the command consumes errors', async () => {
+    await run(() => cmdInit(parseArgs(['init'])));
+    const cap = await run<{ id: string }>(() => cmdCapture(parseArgs(['capture', 'body'])));
+    await expect(
+      run(() => cmdAppend(parseArgs(['append', cap.json.id, 'one', 'two']))),
+    ).rejects.toThrow(/unexpected argument/);
+  });
+});
+
 describe('local FTS (search / list / tags)', () => {
   type Summary = { id: string; title: string; tags: string[]; snippet?: string };
 
