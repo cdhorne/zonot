@@ -11,7 +11,9 @@ export interface InlineFacets {
   type?: string;
 }
 
-const TAG = /(?:^|\s)#([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu;
+// #tag requires an alphabetic start so bare numeric refs (`#39`, a GitHub issue
+// link in prose) stay body text, not a tag (issue #10).
+const TAG = /(?:^|\s)#([\p{L}][\p{L}\p{N}_-]*)/gu;
 const THREAD = /(?:^|\s)@([\p{L}\p{N}][\p{L}\p{N}_-]*)/u;
 const TYPE = /(?:^|\s)!([\p{L}\p{N}][\p{L}\p{N}_-]*)/u;
 

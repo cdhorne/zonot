@@ -208,14 +208,19 @@ any palette satisfying the contract.
 Inline tokens recognized in the body:
 
 - `#tag-slug` — frontmatter `tags[]`. Multiple allowed. Tag-norm runs in core (lowercase,
-  hyphenate, dedupe).
+  hyphenate, dedupe). The slug **must start with a letter** — see below.
 - `@thread-slug` — frontmatter `thread`. One allowed; second occurrence wins (last-wins).
 - `!type` — frontmatter `type`. Default `note`. Reserved values: `context` is
   source-only; reject in capture with a chip in `danger` state and a hint.
 
 Recognition rules:
-- A token must be preceded by start-of-line, whitespace, or `(` — to avoid matching `#1` in
-  "Issue #1" or `@user` mid-sentence.
+- A token must be preceded by start-of-line, whitespace, or `(` — to avoid matching `#1` mid-word
+  in "Issue#1" or `@user` mid-sentence.
+- `#tag` additionally requires the character right after the sigil to be alphabetic
+  (`\p{L}`, not `\p{N}`) — a digit-led `#39` is body text, not a tag, so GitHub issue/PR
+  references in prose ("filed autopilot#28 → #39") don't leak into `tags[]` (issue #10).
+  `@thread`/`!type` keep the letter-or-digit-led slug. There is no escape syntax to force a
+  digit-led tag; use a letter-led alias instead.
 - A token ends at whitespace, end-of-line, `)`, `.`, `,`, `;`, or end of body.
 - Inside fenced code blocks (` ``` ` and `~~~`), tokens are **ignored** — code is verbatim.
 

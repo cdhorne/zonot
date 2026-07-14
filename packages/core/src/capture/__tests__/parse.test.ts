@@ -68,6 +68,13 @@ describe('parseCapture', () => {
     expect(p.tags).toEqual([]);
   });
 
+  test('a digit-led #tag is body text, not a tag (issue #10)', () => {
+    const p = parseCapture('filed autopilot#28 → #39, also #30 and #31');
+    expect(p.tags).toEqual([]);
+    expect(p.chips).toEqual([]);
+    expect(p.body).toBe('filed autopilot#28 → #39, also #30 and #31'); // LEAVE-in-body
+  });
+
   test('title: first short, period-free line', () => {
     expect(parseCapture('Buy milk\nmore body').title).toBe('Buy milk');
     expect(parseCapture('This sentence ends with a period.').title).toBeUndefined();
