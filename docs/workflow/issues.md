@@ -1,7 +1,7 @@
 # Issue conventions
 
 Task tracking for Zonot is **GitHub Issues with a thin convention**, adapted from
-[`cdhorne/claude-autopilot`](https://github.com/cdhorne/claude-autopilot). The convention exists so
+[`pelaggio/pelaggio`](https://github.com/pelaggio/pelaggio) (formerly `claude-autopilot`). The convention exists so
 solo + multi-agent work stays coherent without leaning on a heavier tracker (Linear, Jira) or a
 locking-prone markdown roadmap.
 

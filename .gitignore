@@ -74,3 +74,22 @@ Thumbs.db
 .dev/
 .cache/
 tmp/
+
+# Pelaggio autopilot — consumed LOCALLY from ../pelaggio (private, AGPL-3.0).
+# The pipeline config and skill bodies are read from the working tree by the
+# local runner; they are NOT vendored into this public repo (no AGPL
+# distribution obligation, no exposure of pelaggio IP). zonot's own pr-review
+# skill and _rubric.md remain committed. Regenerate with `pelaggio init`.
+.pelaggio.yml
+.claude/skills/_project-context.md.example
+.claude/skills/_review-logic.md
+.claude/skills/bump-models/
+.claude/skills/charter/
+.claude/skills/pick/
+.claude/skills/pickup/
+.claude/skills/plan/
+.claude/skills/shakedown/
+.claude/skills/ship/
+.claude/skills/shipwreck/
+.claude/skills/status/
+.claude/skills/tidy/
