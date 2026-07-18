@@ -28,6 +28,7 @@ import {
 import { planImport, runImport } from './import.ts';
 import { type Index, openIndex } from './index-store.ts';
 import { EXIT, emit, emitLines, makeStyle, wantJson } from './output.ts';
+import { syncWorkspace } from './sync.ts';
 
 interface Ctx {
   name: string;
@@ -358,6 +359,33 @@ export async function cmdImport(args: ParsedArgs): Promise<number> {
     },
     () =>
       `${s.accent('✓')} imported ${result.written} note${result.written === 1 ? '' : 's'} (${result.unchanged} unchanged) in ${result.commits} commit${result.commits === 1 ? '' : 's'}`,
+  );
+  return EXIT.ok;
+}
+
+// --- sync ------------------------------------------------------------------
+
+export async function cmdSync(args: ParsedArgs): Promise<number> {
+  assertKnownArgs(args, 'sync', new Set(), 0);
+  const { name, ws } = resolveWorkspace(loadConfig(), flagStr(args.flags, 'workspace'));
+  if (ws.backend !== 'local') {
+    throw new ConfigError(`workspace "${name}" is not a local clone-holder — nothing to sync`);
+  }
+  if (!ws.mirror_path) throw new ConfigError(`workspace "${name}" has no mirror_path`);
+  if (!existsSync(`${ws.mirror_path}/.git`)) throw new WorkspaceNotInitializedError(ws.mirror_path);
+  if (!ws.repo) {
+    throw new ConfigError(
+      `workspace "${name}" has no upstream repo — re-run \`zonot init --repo=…\` ` +
+        'or add a "repo" to the workspace in config.json',
+    );
+  }
+
+  const result = await syncWorkspace({ dir: ws.mirror_path, repo: ws.repo, author: gitAuthor() });
+  const s = makeStyle(args);
+  emit(args, result, () =>
+    result.up_to_date
+      ? `${s.accent('✓')} already in sync with ${s.muted(result.remote)}`
+      : `${s.accent('✓')} synced with ${s.muted(result.remote)}  ${s.bold(`↑${result.pushed}`)} ${s.bold(`↓${result.pulled}`)}`,
   );
   return EXIT.ok;
 }

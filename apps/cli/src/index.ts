@@ -21,6 +21,7 @@ import {
   cmdRead,
   cmdSearch,
   cmdStatus,
+  cmdSync,
   cmdTags,
   cmdUndo,
   cmdWorkspaces,
@@ -44,6 +45,7 @@ commands:
   list [--group=tag|type|day] [--since=] recent or grouped listing
   tags [--prefix=…]                      tag counts
   import <path> [--dry-run] [--batch=N]  bulk-import a folder of Markdown
+  sync                                   push local captures to the repo; pull what's new
   status                                 workspace + mirror state
   workspaces                             list configured workspaces
 
@@ -64,6 +66,7 @@ const COMMANDS: Record<string, Handler> = {
   list: cmdList,
   tags: cmdTags,
   import: cmdImport,
+  sync: cmdSync,
   status: cmdStatus,
   workspaces: cmdWorkspaces,
 };
@@ -72,7 +75,6 @@ const COMMANDS: Record<string, Handler> = {
 const PENDING: Record<string, string> = {
   mcp: 'a later Phase 2 unit',
   serve: 'a later Phase 2 unit',
-  sync: 'a later Phase 2 unit',
   logs: 'a later Phase 2 unit',
   doctor: 'a later Phase 2 unit',
   completion: 'a later Phase 2 unit',
