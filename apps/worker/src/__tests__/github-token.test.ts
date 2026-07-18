@@ -54,10 +54,9 @@ function stubTokenEndpoint(respond: (jwt: string, call: number) => Response) {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     expect(String(input)).toBe('https://gh.test/app/installations/87654321/access_tokens');
     expect(init?.method).toBe('POST');
-    const jwt = String((init?.headers as Record<string, string>).authorization).replace(
-      'Bearer ',
-      '',
-    );
+    const jwt = String(
+      (init?.headers as Record<string, string> | undefined)?.authorization,
+    ).replace('Bearer ', '');
     jwts.push(jwt);
     return respond(jwt, jwts.length);
   }) as typeof fetch;

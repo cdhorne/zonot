@@ -28,7 +28,7 @@
   },
   "devDependencies": {
     "@zonot/core": "workspace:*",
-    "isomorphic-git": "^1.38.5"
+    "isomorphic-git": "^1.38.7"
   },
   "publishConfig": {
     "access": "public",

@@ -37,7 +37,9 @@ describe('WorkerClient.send', () => {
     expect(out.kind).toBe('synced');
     expect(out.kind === 'synced' && out.result.id).toBe('01H');
     expect(calls[0]?.url).toBe(`${ENDPOINT}/capture`);
-    expect((calls[0]?.init.headers as Record<string, string>)['idempotency-key']).toBe('k1');
+    expect(
+      (calls[0]?.init?.headers as Record<string, string> | undefined)?.['idempotency-key'],
+    ).toBe('k1');
   });
 
   test('routes each op to the right method + path', async () => {
