@@ -186,6 +186,17 @@ ADRs. Known up front:
 - **Mobile `tsconfig` must set `allowImportingTsExtensions: true`** — the expo base omits it, but core
   is consumed from source with explicit `.ts` import specifiers (the monorepo source-resolution rule),
   so without it mobile typecheck fails `TS5097`. (Phase 3a)
+- **`pnpm --filter zonot <script>` targets the ROOT package, not the CLI** — both the repo root and
+  `apps/cli` are named `zonot`, and the filter matches root first (running its recursive
+  `pnpm -r` script over everything). To act on the CLI package, `cd apps/cli` or filter by path;
+  don't trust `--filter zonot` to scope to the CLI. (Phase 2b)
+- **`zonot sync` is the CLI's push seam** — the `IsomorphicGitBackend` deliberately never pushes
+  ("push is a separate, scheduled concern"); `apps/cli/src/sync.ts` drives isomorphic-git
+  `getRemoteInfo`→`fetch`→fast-forward→`push` over git-HTTPS. Auth is **`x-access-token`:token basic
+  auth** (works for classic/fine-grained PATs *and* `gh` OAuth tokens); the token is resolved
+  env(`ZONOT_TOKEN`→`GITHUB_TOKEN`→`GH_TOKEN`)→`gh auth token` and **never persisted to config**
+  (plaintext-secret-at-rest would undercut ADR-0001/0037). Divergence is surfaced as an error, never
+  force-pushed (force-push stays gated, ADR-0004/0026). (Phase 2b)
 
 ## Running things
 
