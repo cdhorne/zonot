@@ -56,9 +56,14 @@ export function normalizeRepoUrl(repo: string): string {
   const sshUrl = r.match(/^ssh:\/\/git@([^/]+)\/(.+?)(?:\.git)?$/);
   if (sshUrl) return `https://${sshUrl[1]}/${sshUrl[2]}.git`;
 
-  if (/^https?:\/\//.test(r)) return r.endsWith('.git') ? r : `${r}.git`;
+  if (/^https?:\/\//.test(r)) {
+    const t = r.replace(/\/$/, ''); // tolerate a trailing slash
+    return t.endsWith('.git') ? t : `${t}.git`;
+  }
 
-  if (/^[\w.-]+\/[\w.-]+$/.test(r)) return `https://github.com/${r}.git`;
+  if (/^[\w.-]+\/[\w.-]+$/.test(r)) {
+    return `https://github.com/${r.replace(/\.git$/, '')}.git`; // avoid repo.git.git
+  }
 
   throw new ConfigError(`unrecognized repo URL: ${repo}`);
 }
@@ -200,12 +205,17 @@ async function reconcile(
       author,
       message: `sync: merge origin/${branch}`,
     });
-  } catch {
+  } catch (err) {
+    // Only a genuine merge conflict / unmergeable history is the actionable
+    // "diverged" case; re-throw anything else (I/O, bad author, bugs) intact.
+    if (!isMergeFailure(err)) throw err;
     throw new ConfigError(
       `local and origin/${branch} have diverged and can't be merged automatically — ` +
         'resolve it in the mirror with git, then re-run `zonot sync`',
     );
   }
+  // Force is deliberate: the mirror is machine-managed and in-file edits outside
+  // the API are gated (ADR-0004/0026), so there's no user work to clobber.
   await git.checkout({ fs, dir, ref: branch, force: true });
 
   const afterOid = await resolveRef(fs, dir, branch);
@@ -216,21 +226,33 @@ async function reconcile(
 
 /**
  * getRemoteInfo doubles as the auth/reachability probe and the branch check.
- * onAuth is optional so `init` can probe a public repo before any token exists;
- * an empty repo returns no head → null (not an error).
+ * onAuth is optional so `init` can probe a public repo before any token exists.
+ * Returns the branch oid, or null only when the remote is *truly* empty. A
+ * remote that has other branches but not ours is a loud error, not a silent
+ * null — otherwise we'd treat a `master`-only repo as empty and push a parallel
+ * `main` instead of adopting its history (v1 is single-branch).
  */
 async function probeRemoteBranch(
   url: string,
   branch: string,
   onAuth?: OnAuth,
 ): Promise<string | null> {
+  let heads: Record<string, string>;
   try {
     const info = await git.getRemoteInfo({ http, url, ...(onAuth ? { onAuth } : {}) });
-    const heads = (info.refs?.heads ?? {}) as Record<string, string>;
-    return heads[branch] ?? null;
+    heads = (info.refs?.heads ?? {}) as Record<string, string>;
   } catch (err) {
     throw remoteError(err);
   }
+  if (heads[branch]) return heads[branch];
+  const names = Object.keys(heads);
+  if (names.length > 0) {
+    throw new ConfigError(
+      `remote has no '${branch}' branch (found: ${names.join(', ')}) — ` +
+        `zonot v1 syncs the '${branch}' branch only`,
+    );
+  }
+  return null;
 }
 
 async function resolveRef(fs: typeof nodeFs, dir: string, ref: string): Promise<string | null> {
@@ -241,7 +263,13 @@ async function resolveRef(fs: typeof nodeFs, dir: string, ref: string): Promise<
   }
 }
 
-/** Commits reachable from `tip` but not from `base` (bounded log walk). */
+/**
+ * Commits reachable from `tip` but not from `base` (bounded log walk). A true
+ * set difference, not an early-break on the first shared oid: after a merge
+ * commit the log is topo/date-ordered, so a shared ancestor can appear before a
+ * tip-unique commit — breaking there would undercount. Skipping (not breaking)
+ * is correct for any history shape.
+ */
 async function countAhead(
   fs: typeof nodeFs,
   dir: string,
@@ -256,8 +284,7 @@ async function countAhead(
   }
   let n = 0;
   for (const c of await git.log({ fs, dir, ref: tip, depth: 5000 })) {
-    if (seen.has(c.oid)) break;
-    n++;
+    if (!seen.has(c.oid)) n++;
   }
   return n;
 }
@@ -276,6 +303,13 @@ function pushError(err: unknown): Error {
     return new UpstreamDownError(`push rejected (remote moved) — re-run \`zonot sync\`: ${msg}`);
   }
   return new UpstreamDownError(`push failed: ${msg}`);
+}
+
+/** A merge that failed because the histories can't be auto-merged (vs an I/O or programmer error). */
+function isMergeFailure(err: unknown): boolean {
+  const e = err as { code?: string; name?: string; message?: string };
+  const tag = `${e?.code ?? ''} ${e?.name ?? ''} ${e?.message ?? ''}`;
+  return /Merge(Conflict|NotSupported)|conflict|unrelated|fast.?forward/i.test(tag);
 }
 
 /**
@@ -297,7 +331,20 @@ export async function cloneExistingRepo(opts: {
   const token = tryToken();
   const onAuth = token ? onAuthFor(token) : undefined;
 
-  const remoteOid = await probeRemoteBranch(url, branch, onAuth);
+  let remoteOid: string | null;
+  try {
+    remoteOid = await probeRemoteBranch(url, branch, onAuth);
+  } catch (err) {
+    // No token offered + auth failure ⇒ almost certainly a private repo. Say so,
+    // rather than "GitHub rejected the token" (none was sent).
+    if (!token && err instanceof UnauthorizedError) {
+      throw new ConfigError(
+        `can't read ${opts.repo} — if it's private, set ZONOT_TOKEN (or run \`gh auth login\`), ` +
+          'then re-run `zonot init --repo=…`',
+      );
+    }
+    throw err;
+  }
   if (!remoteOid) return false;
 
   await git.clone({
