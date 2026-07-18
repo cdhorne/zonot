@@ -1,5 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import { normalizeRepoUrl, resolveToken } from '../sync.ts';
+import nodeFs from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import git from 'isomorphic-git';
+import { localSyncState, normalizeRepoUrl, resolveToken } from '../sync.ts';
+
+const author = { name: 'Test', email: 'test@localhost' };
+
+async function commitFile(dir: string, name: string): Promise<string> {
+  await writeFile(join(dir, name), name);
+  await git.add({ fs: nodeFs, dir, filepath: name });
+  return git.commit({ fs: nodeFs, dir, message: `add ${name}`, author });
+}
 
 describe('normalizeRepoUrl', () => {
   test('owner/repo shorthand → github https', () => {
@@ -64,5 +77,55 @@ describe('resolveToken', () => {
 
   test('trims surrounding whitespace', () => {
     expect(resolveToken({ env: { ZONOT_TOKEN: '  z  ' } })).toBe('z');
+  });
+});
+
+describe('localSyncState', () => {
+  let dir: string;
+
+  async function makeRepo(): Promise<void> {
+    dir = await mkdtemp(join(tmpdir(), 'zonot-sync-'));
+    await git.init({ fs: nodeFs, dir, defaultBranch: 'main' });
+  }
+  const cleanup = () => rm(dir, { recursive: true, force: true });
+
+  test('no tracking ref → tracking false, ahead/behind zero', async () => {
+    await makeRepo();
+    await commitFile(dir, 'a');
+    const state = await localSyncState({ dir, repo: 'o/r' });
+    expect(state).toMatchObject({
+      branch: 'main',
+      tracking: false,
+      ahead: 0,
+      behind: 0,
+      repo: 'o/r',
+    });
+    await cleanup();
+  });
+
+  test('local ahead of the tracking ref counts unpushed commits', async () => {
+    await makeRepo();
+    const c1 = await commitFile(dir, 'a');
+    await git.writeRef({ fs: nodeFs, dir, ref: 'refs/remotes/origin/main', value: c1 });
+    await commitFile(dir, 'b');
+    await commitFile(dir, 'c');
+    const state = await localSyncState({ dir });
+    expect(state).toMatchObject({ tracking: true, ahead: 2, behind: 0 });
+    expect(state.repo).toBeUndefined();
+    await cleanup();
+  });
+
+  test('tracking ref ahead of local counts unpulled commits (behind)', async () => {
+    await makeRepo();
+    const c1 = await commitFile(dir, 'a');
+    // Point the local branch back at c1 while the tracking ref leads by two.
+    const c2 = await commitFile(dir, 'b');
+    const c3 = await commitFile(dir, 'c');
+    await git.writeRef({ fs: nodeFs, dir, ref: 'refs/remotes/origin/main', value: c3 });
+    await git.writeRef({ fs: nodeFs, dir, ref: 'refs/heads/main', value: c1, force: true });
+    const state = await localSyncState({ dir });
+    expect(state).toMatchObject({ tracking: true, ahead: 0, behind: 2 });
+    expect(c2).toBeDefined();
+    await cleanup();
   });
 });

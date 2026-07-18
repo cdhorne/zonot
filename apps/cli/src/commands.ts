@@ -28,7 +28,7 @@ import {
 import { planImport, runImport } from './import.ts';
 import { type Index, openIndex } from './index-store.ts';
 import { EXIT, emit, emitLines, makeStyle, wantJson } from './output.ts';
-import { syncWorkspace } from './sync.ts';
+import { cloneExistingRepo, localSyncState, syncWorkspace } from './sync.ts';
 
 interface Ctx {
   name: string;
@@ -109,6 +109,16 @@ export async function cmdInit(args: ParsedArgs): Promise<number> {
   const repo = flagStr(args.flags, 'repo');
   const ws: WorkspaceConfig = { backend: 'local', mirror_path, ...(repo ? { repo } : {}) };
 
+  // With an upstream that already has history, adopt it (clone) rather than
+  // starting a divergent empty repo `sync` would refuse to merge. An empty
+  // remote (or none) falls through to local init; the first `sync` pushes.
+  let cloned = false;
+  if (repo && !existsSync(`${mirror_path}/.git`)) {
+    cloned = await cloneExistingRepo({ dir: mirror_path, repo });
+  }
+
+  // Idempotent: inits an empty repo when we didn't clone, and only writes any
+  // still-missing scaffold (marker/dirs) when we did.
   const result = await buildBackend(name, ws).init({ workspace: name, conventionVersion: 1 });
 
   config.workspaces[name] = ws;
@@ -116,11 +126,10 @@ export async function cmdInit(args: ParsedArgs): Promise<number> {
   saveConfig(config);
 
   const s = makeStyle(args);
-  emit(
-    args,
-    { workspace: name, mirror_path, paths: result.paths },
-    () =>
-      `${s.accent('✓')} initialized workspace ${s.bold(name)} at ${mirror_path}${ws.repo ? `\n  ${s.muted(`(repo ${ws.repo} stored; clone/push not yet wired — created an empty local repo)`)}` : ''}`,
+  emit(args, { workspace: name, mirror_path, cloned, paths: result.paths }, () =>
+    cloned
+      ? `${s.accent('✓')} cloned ${s.bold(ws.repo ?? repo ?? '')} into workspace ${s.bold(name)} at ${mirror_path}`
+      : `${s.accent('✓')} initialized workspace ${s.bold(name)} at ${mirror_path}${ws.repo ? `\n  ${s.muted(`(repo ${ws.repo} stored; \`zonot sync\` will push)`)}` : ''}`,
   );
   return EXIT.ok;
 }
@@ -392,16 +401,43 @@ export async function cmdSync(args: ParsedArgs): Promise<number> {
 
 // --- introspection ---------------------------------------------------------
 
-export function cmdStatus(args: ParsedArgs): number {
+export async function cmdStatus(args: ParsedArgs): Promise<number> {
   assertKnownArgs(args, 'status', new Set(), 0);
   const { name, ws } = resolveWorkspace(loadConfig(), flagStr(args.flags, 'workspace'));
   const initialized = ws.mirror_path ? existsSync(`${ws.mirror_path}/.git`) : false;
+  // Offline read: ahead/behind the last-fetched origin, no network/token.
+  const sync =
+    initialized && ws.mirror_path
+      ? await localSyncState({ dir: ws.mirror_path, ...(ws.repo ? { repo: ws.repo } : {}) })
+      : undefined;
   const s = makeStyle(args);
   emit(
     args,
-    { workspace: name, backend: ws.backend, mirror_path: ws.mirror_path, initialized },
-    () =>
-      `${s.bold(name)}  ${s.muted(`(${ws.backend})`)}\n  mirror: ${ws.mirror_path ?? '—'} ${initialized ? s.accent('✓') : s.danger('(not initialized)')}`,
+    {
+      workspace: name,
+      backend: ws.backend,
+      mirror_path: ws.mirror_path,
+      initialized,
+      repo: ws.repo ?? null,
+      ...(sync ? { ahead: sync.ahead, behind: sync.behind, tracking: sync.tracking } : {}),
+    },
+    () => {
+      const lines = [
+        `${s.bold(name)}  ${s.muted(`(${ws.backend})`)}`,
+        `  mirror: ${ws.mirror_path ?? '—'} ${initialized ? s.accent('✓') : s.danger('(not initialized)')}`,
+      ];
+      if (ws.repo) lines.push(`  repo: ${s.muted(ws.repo)}`);
+      if (sync) {
+        lines.push(
+          sync.tracking
+            ? `  sync: ${s.bold(`↑${sync.ahead}`)} unpushed  ${s.bold(`↓${sync.behind}`)} unpulled`
+            : ws.repo
+              ? `  sync: ${s.muted('not yet synced — run `zonot sync`')}`
+              : `  sync: ${s.muted('no repo configured — `zonot init --repo=…`')}`,
+        );
+      }
+      return lines.join('\n');
+    },
   );
   return EXIT.ok;
 }

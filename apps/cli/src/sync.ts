@@ -94,7 +94,19 @@ function defaultGhToken(): string | null {
 
 // GitHub HTTPS basic auth: username `x-access-token`, password = the token.
 // Works uniformly for classic PATs, fine-grained PATs, and gh OAuth tokens.
-const onAuthFor = (token: string) => () => ({ username: 'x-access-token', password: token });
+type OnAuth = () => { username: string; password: string };
+const onAuthFor =
+  (token: string): OnAuth =>
+  () => ({ username: 'x-access-token', password: token });
+
+/** Resolve a token if one is available, else undefined (public-repo / no-auth paths). */
+function tryToken(): string | undefined {
+  try {
+    return resolveToken();
+  } catch {
+    return undefined;
+  }
+}
 
 /** Push local commits to the remote, fast-forwarding in anything we're behind on. */
 export async function syncWorkspace(opts: SyncOptions): Promise<SyncResult> {
@@ -202,14 +214,18 @@ async function reconcile(
   return Math.max(0, afterCount - beforeCount);
 }
 
-/** getRemoteInfo doubles as the auth/reachability probe and the branch check. */
+/**
+ * getRemoteInfo doubles as the auth/reachability probe and the branch check.
+ * onAuth is optional so `init` can probe a public repo before any token exists;
+ * an empty repo returns no head → null (not an error).
+ */
 async function probeRemoteBranch(
   url: string,
   branch: string,
-  onAuth: ReturnType<typeof onAuthFor>,
+  onAuth?: OnAuth,
 ): Promise<string | null> {
   try {
-    const info = await git.getRemoteInfo({ http, url, onAuth });
+    const info = await git.getRemoteInfo({ http, url, ...(onAuth ? { onAuth } : {}) });
     const heads = (info.refs?.heads ?? {}) as Record<string, string>;
     return heads[branch] ?? null;
   } catch (err) {
@@ -260,4 +276,76 @@ function pushError(err: unknown): Error {
     return new UpstreamDownError(`push rejected (remote moved) — re-run \`zonot sync\`: ${msg}`);
   }
   return new UpstreamDownError(`push failed: ${msg}`);
+}
+
+/**
+ * If the upstream already has the branch, clone it into `dir` so we adopt its
+ * history instead of starting a divergent empty one (which `sync` would then
+ * refuse to merge). Returns false when the remote is empty — the caller then
+ * does the local init + scaffold and the first `sync` pushes.
+ */
+export async function cloneExistingRepo(opts: {
+  dir: string;
+  repo: string;
+  branch?: string;
+  fs?: typeof nodeFs;
+}): Promise<boolean> {
+  const fs = opts.fs ?? nodeFs;
+  const dir = opts.dir.replace(/\/$/, '');
+  const branch = opts.branch ?? 'main';
+  const url = normalizeRepoUrl(opts.repo);
+  const token = tryToken();
+  const onAuth = token ? onAuthFor(token) : undefined;
+
+  const remoteOid = await probeRemoteBranch(url, branch, onAuth);
+  if (!remoteOid) return false;
+
+  await git.clone({
+    fs,
+    http,
+    dir,
+    url,
+    ref: branch,
+    singleBranch: true,
+    ...(onAuth ? { onAuth } : {}),
+  });
+  return true;
+}
+
+export interface SyncState {
+  repo?: string;
+  branch: string;
+  /** Whether we've fetched the remote at least once (a tracking ref exists). */
+  tracking: boolean;
+  /** Local commits not yet on the remote-tracking ref. */
+  ahead: number;
+  /** Remote-tracking commits not yet fast-forwarded locally. */
+  behind: number;
+}
+
+/**
+ * Offline sync state for `status`: ahead/behind the *last-fetched*
+ * origin/<branch>, from local refs only — no network, no token. `ahead` is the
+ * "unsynced captures" signal a dogfooder wants before closing the laptop.
+ */
+export async function localSyncState(opts: {
+  dir: string;
+  repo?: string;
+  branch?: string;
+  fs?: typeof nodeFs;
+}): Promise<SyncState> {
+  const fs = opts.fs ?? nodeFs;
+  const dir = opts.dir.replace(/\/$/, '');
+  const branch = opts.branch ?? 'main';
+  const local = await resolveRef(fs, dir, branch);
+  const tracked = await resolveRef(fs, dir, `refs/remotes/origin/${branch}`);
+  const ahead = tracked ? await countAhead(fs, dir, local, tracked) : 0;
+  const behind = tracked ? await countAhead(fs, dir, tracked, local) : 0;
+  return {
+    branch,
+    tracking: tracked !== null,
+    ahead,
+    behind,
+    ...(opts.repo ? { repo: opts.repo } : {}),
+  };
 }
