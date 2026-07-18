@@ -6,21 +6,25 @@
     "version": "0.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.zonot.mobile"
     },
     "android": {
-      "package": "app.zonot.mobile",
-      "edgeToEdgeEnabled": true
+      "package": "app.zonot.mobile"
     },
     "plugins": [
       "./plugins/withPnpmPodfileFix",
       "expo-router",
       "expo-secure-store",
       "expo-font",
-      ["expo-splash-screen", { "backgroundColor": "#ffffff" }]
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": false
